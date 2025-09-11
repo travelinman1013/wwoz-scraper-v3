@@ -20,6 +20,12 @@ export class WorkflowService {
             Logger.warn('No songs scraped. Nothing to process.');
             return;
         }
+        // Ensure processing in chronological order (oldest -> newest) based on playedTime
+        const songsOrdered = songs.slice().sort((a, b) => {
+            const aKey = this.sortKeyForSong(a);
+            const bKey = this.sortKeyForSong(b);
+            return aKey - bKey;
+        });
         // Resolve target playlist
         let playlistId;
         let playlistName;
@@ -49,7 +55,7 @@ export class WorkflowService {
         let added = 0;
         let duplicatesInARow = 0;
         let stoppedDueToDuplicates = false;
-        for (const song of songs) {
+        for (const song of songsOrdered) {
             processed++;
             const archivedAt = new Date().toISOString();
             try {
@@ -173,6 +179,50 @@ export class WorkflowService {
     buildPlaylistName() {
         const today = dayjs().format('YYYY-MM-DD');
         return `WWOZ Discoveries - ${today}`;
+    }
+    parsePlayedTimeToMinutes(playedTime) {
+        if (!playedTime)
+            return null;
+        const s = playedTime.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+        const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+        if (ampm) {
+            let hh = parseInt(ampm[1], 10);
+            const mm = parseInt(ampm[2], 10);
+            const mer = ampm[3].toLowerCase();
+            if (mer === 'am') {
+                if (hh === 12)
+                    hh = 0;
+            }
+            else if (mer === 'pm') {
+                if (hh !== 12)
+                    hh += 12;
+            }
+            return hh * 60 + mm;
+        }
+        const h24 = s.match(/^(\d{1,2}):(\d{2})$/);
+        if (h24) {
+            const hh = parseInt(h24[1], 10);
+            const mm = parseInt(h24[2], 10);
+            return hh * 60 + mm;
+        }
+        return null;
+    }
+    sortKeyForSong(song) {
+        // Try to build an absolute minutes-since-epoch key if playedDate is parsable
+        const minutes = this.parsePlayedTimeToMinutes(song.playedTime);
+        const d = song.playedDate ? dayjs(song.playedDate) : null;
+        if (minutes !== null && d && d.isValid()) {
+            const dayStartMs = d.startOf('day').valueOf();
+            return Math.floor(dayStartMs / 60000) + minutes;
+        }
+        // If only time-of-day is available, use minutes (sort within the same day)
+        if (minutes !== null)
+            return minutes;
+        // Fallback to scrapedAt/archivedAt timestamps converted to minutes
+        const t = dayjs(song.scrapedAt);
+        if (t.isValid())
+            return Math.floor(t.valueOf() / 60000);
+        return Math.floor(Date.now() / 60000);
     }
     async archiveOutcome(song, status, archivedAt, match) {
         const entry = {

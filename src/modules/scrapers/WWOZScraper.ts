@@ -73,18 +73,36 @@ export class WWOZScraper implements IScraper {
           let time = get('td[data-bind="time"]');
 
           if (!artist && !title) {
-            // Fallback to positional cells if data-bind attrs not present
+            // Fallback heuristics when explicit bindings are missing.
             const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
-            const texts = cells.map((c) => c.textContent?.trim() || '');
-            if (texts.length >= 5) {
-              // [Artist, Title, Album, Date, Time]
-              [artist, title, album, date, time] = texts;
-            } else if (texts.length >= 3) {
-              [artist, title, album] = texts;
-            } else if (texts.length === 2) {
-              [artist, title] = texts;
-            } else if (texts.length >= 1) {
-              title = texts[0];
+            const texts = cells.map((c) => (c.textContent || '').trim());
+            const timeRe = /^(\d{1,2}):(\d{2})(?:\s*[aApP]\.?(?:m\.?){1})?$/; // matches 3:05 PM, 3:05pm, 15:05
+
+            // Common table layout: [Time, Artist, Title, Album]
+            if (texts.length >= 4 && timeRe.test(texts[0])) {
+              time = texts[0];
+              artist = texts[1] || '';
+              title = texts[2] || '';
+              album = texts[3] || '';
+            } else {
+              // Generic mapping with time detection anywhere in the row
+              const timeIdx = texts.findIndex((t) => timeRe.test(t));
+              if (timeIdx >= 0) time = texts[timeIdx];
+              const nonTime = texts.filter((_, i) => i !== timeIdx).filter((t) => t && t !== '-');
+              if (nonTime.length >= 3) {
+                // Assume [Artist, Title, Album]
+                artist = nonTime[0];
+                title = nonTime[1];
+                album = nonTime[2];
+              } else if (nonTime.length === 2) {
+                [artist, title] = nonTime;
+              } else if (nonTime.length === 1) {
+                title = nonTime[0];
+              }
+              // Try to capture date if last cell looks like a date (MM/DD or MM/DD/YYYY)
+              const dateRe = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/;
+              const dateIdx = texts.findIndex((t) => dateRe.test(t));
+              if (dateIdx >= 0) date = texts[dateIdx];
             }
           }
 

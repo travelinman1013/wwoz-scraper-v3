@@ -124,7 +124,8 @@ function parseMonthDay(input) {
 function normalizeTo24h(input) {
     if (!input)
         return null;
-    const s = input.trim().toLowerCase();
+    // Normalize: lowercase, drop periods (a.m. -> am), collapse spaces
+    const s = input.trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ');
     // 12-hour clock with am/pm
     let m = s.match(/^(\d{1,2}):(\d{2})\s*([ap]m)$/i);
     if (m) {

@@ -257,13 +257,30 @@ export class ObsidianArchiver {
         return s.length > 0 ? s : '-';
     }
     pickTime(entry) {
-        const played = (entry.song.playedTime || '').trim();
-        if (played) {
-            // normalize to HH:MM if possible
-            const m = played.match(/^(\d{1,2}):(\d{2})/);
-            if (m)
-                return `${m[1].padStart(2, '0')}:${m[2]}`;
-            return played;
+        const playedRaw = (entry.song.playedTime || '').trim();
+        if (playedRaw) {
+            // Handle common forms: "h:mm AM/PM", "h:mmam", "h:mm a.m.", and 24h "HH:mm"
+            const s = playedRaw.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+            const ampmMatch = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+            if (ampmMatch) {
+                let hh = parseInt(ampmMatch[1], 10);
+                const mm = ampmMatch[2];
+                const mer = ampmMatch[3].toLowerCase();
+                if (mer === 'am') {
+                    if (hh === 12)
+                        hh = 0;
+                }
+                else if (mer === 'pm') {
+                    if (hh !== 12)
+                        hh += 12;
+                }
+                return `${String(hh).padStart(2, '0')}:${mm}`;
+            }
+            const twentyFour = s.match(/^(\d{1,2}):(\d{2})$/);
+            if (twentyFour)
+                return `${twentyFour[1].padStart(2, '0')}:${twentyFour[2]}`;
+            // Fallback: return original if unrecognized
+            return playedRaw;
         }
         const at = dayjs(entry.song.scrapedAt || entry.archivedAt);
         return at.isValid() ? at.format('HH:mm') : '-';
