@@ -47,6 +47,11 @@ export class WorkflowService {
       ? this.enricher.getCachedTrackCount(playlistId)
       : 0;
 
+    // Clear archiver's in-memory duplicate cache at the start of each run/session
+    if (typeof (this.archiver as any).clearDedupCache === 'function') {
+      (this.archiver as any).clearDedupCache();
+    }
+
     let processed = 0;
     let added = 0;
     let duplicatesInARow = 0;
@@ -66,6 +71,27 @@ export class WorkflowService {
         if (programInfo) {
           song.show = programInfo.show;
           song.host = programInfo.host;
+        }
+
+        // Early duplicate detection against archive (covers NOT FOUND duplicates)
+        if (typeof (this.archiver as any).wasArchived === 'function') {
+          const alreadyArchived = await (this.archiver as any).wasArchived({
+            song,
+            status: 'unknown',
+            archivedAt,
+          });
+          if (alreadyArchived) {
+            duplicatesInARow++;
+            Logger.info(
+              `Archive duplicate encountered: ${song.artist} - ${song.title}. ${duplicatesInARow} dup(s) in a row.`
+            );
+            if (duplicatesInARow >= 5) {
+              Logger.info('Reached 5 consecutive duplicates. Stopping early.');
+              stoppedDueToDuplicates = true;
+              break;
+            }
+            continue;
+          }
         }
 
         const match = await this.enricher.findMatch(song);
@@ -91,7 +117,6 @@ export class WorkflowService {
           Logger.info(
             `Duplicate in ${playlistName}: ${song.artist} - ${song.title} (track ${match.track.id}). ${duplicatesInARow} dup(s) in a row.`
           );
-          await this.archiveOutcome(song, 'found', archivedAt, match);
           if (duplicatesInARow >= 5) {
             Logger.info('Reached 5 consecutive duplicates. Stopping early.');
             stoppedDueToDuplicates = true;
@@ -151,12 +176,20 @@ export class WorkflowService {
         Logger.error('Run failed; continuing after delay.', err);
       }
       Logger.info(`Waiting ${intervalSec}s before next run...`);
-      await this.waitSeconds(intervalSec);
+      await this.waitWithCountdown(intervalSec, 100);
     }
   }
 
-  private waitSeconds(seconds: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  private async waitWithCountdown(totalSeconds: number, tickSeconds = 100): Promise<void> {
+    let remaining = Math.max(0, Math.floor(totalSeconds));
+    while (remaining > 0) {
+      const step = Math.min(tickSeconds, remaining);
+      await new Promise((resolve) => setTimeout(resolve, step * 1000));
+      remaining -= step;
+      if (remaining > 0) {
+        Logger.info(`Next refresh in ${remaining} seconds`);
+      }
+    }
   }
 
   private buildPlaylistName(): string {

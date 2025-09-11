@@ -6,6 +6,9 @@ import { Logger } from '../../utils/logger.js';
 import { config } from '../../utils/config.js';
 export class ObsidianArchiver {
     recentKeys = new Map(); // key -> lastWrittenEpochMs
+    clearDedupCache() {
+        this.recentKeys.clear();
+    }
     async archive(entry) {
         const basePath = config.archive.basePath;
         if (!basePath || basePath.trim().length === 0) {
@@ -60,6 +63,28 @@ export class ObsidianArchiver {
         }
         catch (err) {
             Logger.error('Failed to finalize daily stats (non-fatal).', err);
+        }
+    }
+    async wasArchived(entry) {
+        try {
+            const basePath = config.archive.basePath;
+            if (!basePath || basePath.trim().length === 0)
+                return false;
+            const fileDate = this.resolveDate(entry);
+            const root = this.computeBaseRoot(basePath);
+            const dir = path.join(root, fileDate.format('YYYY'), fileDate.format('MM'));
+            const filePath = path.join(dir, `${fileDate.format('YYYY-MM-DD')}.md`);
+            if (!(await this.exists(filePath)))
+                return false;
+            const content = await fs.promises.readFile(filePath, 'utf8');
+            const keys = this.collectSongKeysFromMarkdown(content);
+            Logger.debug(`Archive scan: ${filePath} has ${keys.size} track row(s).`);
+            const key = this.buildSongKey(entry);
+            return keys.has(key);
+        }
+        catch (err) {
+            Logger.error('Failed to check archived status (non-fatal).', err);
+            return false;
         }
     }
     computeStatsFromMarkdown(content) {
@@ -199,11 +224,16 @@ export class ObsidianArchiver {
             .replace(/\s+/g, ' ')
             .trim();
     }
+    buildSongKey(entry) {
+        const artist = this.normalize(entry.song.artist || '');
+        const title = this.normalize(entry.song.title || '');
+        return `${artist}::${title}`;
+    }
     isRecentDuplicate(entry) {
         const windowMinutes = config.archive.deduplicationWindowMinutes ?? 0;
         if (windowMinutes <= 0)
             return false;
-        const key = `${this.normalize(entry.song.artist || '')}::${this.normalize(entry.song.title || '')}`;
+        const key = this.buildSongKey(entry);
         const now = Date.now();
         const last = this.recentKeys.get(key) || 0;
         const isDup = now - last <= windowMinutes * 60 * 1000;
@@ -273,5 +303,42 @@ export class ObsidianArchiver {
         // Don't escape markdown link; table cell escaping handled for other fields
         const spotifyText = spotifyUrl ? `[Open](${spotifyUrl})` : '-';
         return { statusLabel, confidenceText, spotifyText };
+    }
+    // Removed scraped column in favor of Show/Host columns
+    collectSongKeysFromMarkdown(content) {
+        const lines = content.split(/\r?\n/);
+        let inTracks = false;
+        let headerSeen = false;
+        const keys = new Set();
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (line.startsWith('## ')) {
+                inTracks = line.toLowerCase().startsWith('## tracks');
+                headerSeen = false;
+                continue;
+            }
+            if (!inTracks)
+                continue;
+            if (line.startsWith('| :')) {
+                headerSeen = true;
+                continue;
+            }
+            if (line.startsWith('|') && line.endsWith('|')) {
+                if (!headerSeen)
+                    continue; // skip titles row
+                const cells = line
+                    .split('|')
+                    .map((s) => s.trim())
+                    .slice(1, -1);
+                if (cells.length < 3)
+                    continue;
+                const artist = this.normalize(cells[1] || '');
+                const title = this.normalize(cells[2] || '');
+                if (!artist && !title)
+                    continue;
+                keys.add(`${artist}::${title}`);
+            }
+        }
+        return keys;
     }
 }

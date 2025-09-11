@@ -59,4 +59,8 @@ export interface IArchiver {
   archive(entry: ArchiveEntry): Promise<void>;
   // Optional: recompute and update per-day stats within the markdown file
   finalizeDailyStats?(date?: string): Promise<void>;
+  // Optional: check if a song was already archived for the relevant day
+  wasArchived?(entry: ArchiveEntry): Promise<boolean>;
+  // Optional: clear in-memory dedup for a new run/session
+  clearDedupCache?(): void;
 }
