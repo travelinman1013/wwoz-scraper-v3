@@ -1,0 +1,19 @@
+dryRun: false
+wwoz:
+  playlistUrl: 'https://wwoz.org/programs/playlists'
+  scrapeIntervalSeconds: 300
+spotify:
+  clientId: '79b8a3797f7b45b3b508fd9abc32be6e'
+  clientSecret: 'eef6982c906f4a57bc6ba2ae474e888a'
+  refreshToken: 'AQDIVFXrjF3IdmyzriEzZO2vRcYGewOEm-dO7Mwq1IXAU4BRhgipH5f_gLuq5aFD-lykjw0IewsXUD72esBJOzJjExSJQOBPLlg4xb3OSNL3EhMsa3FywfpMwQFU-rtCYH4'
+  userId: '1239473648'
+  staticPlaylistId: null
+archive:
+  enabled: true
+  basePath: '/path/to/your/obsidian/vault/WWOZ'
+  deduplicationWindowMinutes: 60
+rateLimit:
+  spotify:
+    maxConcurrent: 2
+    minTime: 200
+chromePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
