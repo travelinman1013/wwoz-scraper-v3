@@ -153,6 +153,17 @@ export class SpotifyEnricher {
         this.playlistCache.set(playlistId, ids);
         Logger.info(`Playlist cache loaded with ${ids.size} tracks.`);
     }
+    clearPlaylistCache(playlistId) {
+        if (playlistId) {
+            this.playlistCache.delete(playlistId);
+        }
+        else {
+            this.playlistCache.clear();
+        }
+    }
+    getCachedTrackCount(playlistId) {
+        return this.playlistCache.get(playlistId)?.size ?? 0;
+    }
     async isDuplicate(playlistId, trackId) {
         if (!this.playlistCache.has(playlistId)) {
             await this.loadPlaylistCache(playlistId);

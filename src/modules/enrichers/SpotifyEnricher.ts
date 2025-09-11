@@ -165,6 +165,18 @@ export class SpotifyEnricher implements IEnricher {
     Logger.info(`Playlist cache loaded with ${ids.size} tracks.`);
   }
 
+  clearPlaylistCache(playlistId?: string): void {
+    if (playlistId) {
+      this.playlistCache.delete(playlistId);
+    } else {
+      this.playlistCache.clear();
+    }
+  }
+
+  getCachedTrackCount(playlistId: string): number {
+    return this.playlistCache.get(playlistId)?.size ?? 0;
+  }
+
   async isDuplicate(playlistId: string, trackId: string): Promise<boolean> {
     if (!this.playlistCache.has(playlistId)) {
       await this.loadPlaylistCache(playlistId);

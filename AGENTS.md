@@ -26,6 +26,7 @@ Tip: `npm run build && npm start` to run latest code.
 - Scraper: `WWOZScraper` (Playwright) parses playlist rows.
 - Enricher: `SpotifyEnricher` handles search, scoring, playlist ops.
 - Archiver: simplified `ObsidianArchiver` (Markdown appender).
+- Workflow: `WorkflowService` orchestrates scrape → enrich → archive/playlist with `runOnce()` and `runContinuous()`.
 
 ## Archiver (Simplified, Current Focus)
 - Template: `templates/daily-archive.md.ejs`
@@ -45,14 +46,16 @@ Tip: `npm run build && npm start` to run latest code.
   - In-memory dedup within `archive.deduplicationWindowMinutes` for rapid repeats.
   - No reading or updating of in-file statistics.
 
-## Entry Point (Temporary Testing)
-- `src/index.ts` appends a sample row via `ObsidianArchiver`.
-- Adjust `archive.basePath` to a safe local path for testing.
+## CLI Entrypoint
+- `src/index.ts` uses Commander.
+- Default: continuous mode (`npm start`) runs every `wwoz.scrapeIntervalSeconds`.
+- Single run: `npm run build && node dist/index.js --once`.
+- Modules are DI-injected: `WWOZScraper`, `SpotifyEnricher`, `ObsidianArchiver`, `WorkflowService`.
 
 ## Next Steps (Planned)
-- Wire pipeline: scrape → enrich → archive/playlist.
-- Add CLI flags for run modes; schedule by `wwoz.scrapeIntervalSeconds`.
 - Optional: persist dedup keys across runs.
+- Add richer CLI options (e.g., dry-run toggle, target playlist name).
+- Improve low-confidence handling/feedback loop.
 
 ## Security / Config
 - Do not commit real secrets; prefer local YAML via `CONFIG_PATH`.
@@ -61,3 +64,10 @@ Tip: `npm run build && npm start` to run latest code.
   - `archive.basePath`
   - `archive.deduplicationWindowMinutes`
   - `chromePath` (or install Playwright browsers)
+ - Env overrides:
+   - `SPOTIFY_STATIC_PLAYLIST_ID` overrides `spotify.staticPlaylistId`.
+
+## Workflow Notes
+- Playlist cache is cleared and reloaded at the start of each run to reflect remote state; reloaded again at end to compute accurate “Added” count.
+- Stops early after 5 consecutive duplicates (treated as a normal pause in continuous mode).
+- Archiver escapes Markdown table cells (pipes/newlines) to maintain a clean table; Spotify link remains `[Open](url)`.

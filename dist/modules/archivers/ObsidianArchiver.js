@@ -94,14 +94,18 @@ export class ObsidianArchiver {
         return isDup;
     }
     formatRow(entry) {
-        const time = this.pickTime(entry);
-        const artist = entry.song.artist || '-';
-        const title = entry.song.title || '-';
-        const album = entry.song.album?.trim() || '-';
+        const time = this.safeCell(this.pickTime(entry));
+        const artist = this.safeCell(entry.song.artist || '-');
+        const title = this.safeCell(entry.song.title || '-');
+        const album = this.safeCell(entry.song.album?.trim() || '-');
         const { statusLabel, confidenceText, spotifyText } = this.formatStatus(entry);
-        const scraped = this.pickScraped(entry);
+        const scraped = this.safeCell(this.pickScraped(entry));
         const cells = [time, artist, title, album, statusLabel, confidenceText, spotifyText, scraped];
         return `| ${cells.join(' | ')} |`;
+    }
+    safeCell(input) {
+        const s = (input || '').replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|').trim();
+        return s.length > 0 ? s : '-';
     }
     pickTime(entry) {
         const played = (entry.song.playedTime || '').trim();
@@ -147,6 +151,7 @@ export class ObsidianArchiver {
                 statusLabel = '-';
         }
         const confidenceText = typeof confidence === 'number' ? `${confidence.toFixed(1)}%` : '-';
+        // Don't escape markdown link; table cell escaping handled for other fields
         const spotifyText = spotifyUrl ? `[Open](${spotifyUrl})` : '-';
         return { statusLabel, confidenceText, spotifyText };
     }

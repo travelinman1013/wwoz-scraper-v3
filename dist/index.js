@@ -1,20 +1,26 @@
+import { Command } from 'commander';
 import { Logger } from './utils/logger.js';
+import { WorkflowService } from './services/WorkflowService.js';
+import { WWOZScraper } from './modules/scrapers/WWOZScraper.js';
+import { SpotifyEnricher } from './modules/enrichers/SpotifyEnricher.js';
 import { ObsidianArchiver } from './modules/archivers/ObsidianArchiver.js';
-async function testArchiver() {
-    Logger.info('Testing the Obsidian Archiver...');
+const program = new Command();
+program
+    .name('wwoz-scraper')
+    .description('Scrapes WWOZ, enriches with Spotify, and archives to Obsidian.')
+    .option('--once', 'Run the scraper a single time and exit')
+    .action(async (options) => {
+    const scraper = new WWOZScraper();
+    const enricher = new SpotifyEnricher();
     const archiver = new ObsidianArchiver();
-    const testEntry = {
-        song: { artist: 'Test Artist', title: 'Test Title', scrapedAt: new Date().toISOString() },
-        status: 'found',
-        match: { confidence: 95.5, track: { external_urls: { spotify: 'http://spotify.com' } } },
-        archivedAt: new Date().toISOString(),
-    };
-    try {
-        await archiver.archive(testEntry);
-        Logger.info('Archive test successful. Check your configured directory for the markdown file.');
+    const workflow = new WorkflowService(scraper, enricher, archiver);
+    if (options.once) {
+        Logger.info('Starting a single run...');
+        await workflow.runOnce();
     }
-    catch (error) {
-        Logger.error('Archiver test failed', error);
+    else {
+        Logger.info('Starting continuous monitoring mode...');
+        await workflow.runContinuous();
     }
-}
-testArchiver();
+});
+program.parse(process.argv);

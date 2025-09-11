@@ -72,8 +72,13 @@ export function loadConfig(filePath?: string): AppConfig {
     throw new Error('Invalid configuration: spotify credentials are required.');
   }
 
+  // Environment overrides (non-secret convenience)
+  const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
+  if (envStaticPlaylist && envStaticPlaylist.trim().length > 0) {
+    cfg.spotify.staticPlaylistId = envStaticPlaylist.trim();
+  }
+
   return cfg;
 }
 
 export const config: AppConfig = loadConfig();
-

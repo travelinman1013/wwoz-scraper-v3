@@ -5,3 +5,11 @@ export class ConfigError extends Error {
   }
 }
 
+export class ConsecutiveDuplicatesError extends Error {
+  public readonly count: number;
+  constructor(count: number) {
+    super(`Encountered ${count} consecutive duplicate tracks.`);
+    this.name = 'ConsecutiveDuplicatesError';
+    this.count = count;
+  }
+}

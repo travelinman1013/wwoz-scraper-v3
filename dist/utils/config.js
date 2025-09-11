@@ -31,6 +31,11 @@ export function loadConfig(filePath) {
     if (!cfg.spotify || typeof cfg.spotify.clientId !== 'string' || typeof cfg.spotify.clientSecret !== 'string') {
         throw new Error('Invalid configuration: spotify credentials are required.');
     }
+    // Environment overrides (non-secret convenience)
+    const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
+    if (envStaticPlaylist && envStaticPlaylist.trim().length > 0) {
+        cfg.spotify.staticPlaylistId = envStaticPlaylist.trim();
+    }
     return cfg;
 }
 export const config = loadConfig();

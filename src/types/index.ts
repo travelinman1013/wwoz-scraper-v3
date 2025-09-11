@@ -36,6 +36,8 @@ export interface IEnricher {
   addToPlaylist(playlistId: string, trackUri: string): Promise<void>;
   loadPlaylistCache(playlistId: string): Promise<void>;
   getOrCreatePlaylist(name: string): Promise<{ id: string; name: string }>;
+  clearPlaylistCache(playlistId?: string): Promise<void> | void;
+  getCachedTrackCount?(playlistId: string): number;
 }
 
 // Simplified Archiving
