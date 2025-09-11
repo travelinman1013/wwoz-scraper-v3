@@ -2,20 +2,23 @@ import dayjs from 'dayjs';
 import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import type { IArchiver, IEnricher, IScraper, ArchiveEntry, ScrapedSong, TrackMatch } from '../types/index.js';
+import { ShowGuesser } from '../utils/showGuesser.js';
 
 export class WorkflowService {
   private scraper: IScraper;
   private enricher: IEnricher;
   private archiver: IArchiver;
+  private showGuesser: ShowGuesser;
 
   constructor(scraper: IScraper, enricher: IEnricher, archiver: IArchiver) {
     this.scraper = scraper;
     this.enricher = enricher;
     this.archiver = archiver;
+    this.showGuesser = new ShowGuesser();
   }
 
   async runOnce(): Promise<void> {
-    Logger.info('Workflow run started. Scraping playlist...');
+    Logger.info(`Workflow run started. dryRun=${config.dryRun}. Scraping playlist...`);
 
     const songs = await this.scraper.scrape();
     if (songs.length === 0) {
@@ -54,6 +57,17 @@ export class WorkflowService {
       const archivedAt = new Date().toISOString();
 
       try {
+        // Enrich show/host using per-row played time (fallback to scrapedAt)
+        const programInfo = this.showGuesser.guessShowFromLocalParts(
+          song.playedDate,
+          song.playedTime,
+          song.scrapedAt
+        );
+        if (programInfo) {
+          song.show = programInfo.show;
+          song.host = programInfo.host;
+        }
+
         const match = await this.enricher.findMatch(song);
 
         if (!match) {
@@ -114,6 +128,16 @@ export class WorkflowService {
 
     const stopNote = stoppedDueToDuplicates ? ' (stopped after 5 consecutive duplicates)' : '';
     Logger.info(`Workflow run finished. Processed=${processed}, Added=${remoteAdded}.${stopNote}`);
+
+    // Recompute and update per-day stats in the markdown archive (best-effort)
+    try {
+      if (typeof (this.archiver as any).finalizeDailyStats === 'function') {
+        // Update today's archive file since archivedAt is based on run time
+        await (this.archiver as any).finalizeDailyStats(dayjs().format('YYYY-MM-DD'));
+      }
+    } catch (err) {
+      Logger.error('Failed to update archive statistics (non-fatal).', err);
+    }
   }
 
   async runContinuous(): Promise<void> {

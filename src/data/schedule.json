@@ -1,0 +1,84 @@
+{
+  "monday": [
+    { "start": "00:00", "end": "03:00", "show": "The Dean's List with Dean Ellis" },
+    { "start": "03:00", "end": "06:00", "show": "Overnight Music - Monday" },
+    { "start": "06:00", "end": "09:00", "show": "The Morning Set with Stuart Hall" },
+    { "start": "09:00", "end": "11:00", "show": "Traditional Jazz with Dan Meyer" },
+    { "start": "11:00", "end": "14:00", "show": "New Orleans Music Show with Murf Reeves" },
+    { "start": "14:00", "end": "16:00", "show": "Blues Eclectic with Andrew Grafe" },
+    { "start": "16:00", "end": "19:00", "show": "Jazz from Jax Brewery with Maryse Dejean" },
+    { "start": "19:00", "end": "22:00", "show": "Blues and R&B with Gentilly Jr." },
+    { "start": "22:00", "end": "24:00", "show": "Kitchen Sink with Derrick Freeman" }
+  ],
+  "tuesday": [
+    { "start": "00:00", "end": "02:00", "show": "Adjacent with Benny Poppins" },
+    { "start": "02:00", "end": "06:00", "show": "Overnight Music - Tuesday" },
+    { "start": "06:00", "end": "09:00", "show": "The Morning Set with Fox Duhon or Mark LaMaire" },
+    { "start": "09:00", "end": "11:00", "show": "Traditional Jazz with Leslie Cooper" },
+    { "start": "11:00", "end": "14:00", "show": "New Orleans Music Show with Cole Williams" },
+    { "start": "14:00", "end": "16:00", "show": "Soul Serenade with Marc Stone" },
+    { "start": "16:00", "end": "19:00", "show": "Jazz from Jax Brewery with T.R. Johnson" },
+    { "start": "19:00", "end": "22:00", "show": "50s R&B with Neil Pellegrin" },
+    { "start": "22:00", "end": "24:00", "show": "The Freaknologist Lunatique Show with David Kunian" }
+  ],
+  "wednesday": [
+    { "start": "00:00", "end": "03:00", "show": "Over Night Music with D Rootzmaster, MID - 3am" },
+    { "start": "03:00", "end": "06:00", "show": "Over Night Music with D Rootzmaster, 3am - 6am" },
+    { "start": "06:00", "end": "09:00", "show": "The Morning Set with Breaux Bridges" },
+    { "start": "09:00", "end": "11:00", "show": "Traditional Jazz with Tom Saunders" },
+    { "start": "11:00", "end": "14:00", "show": "New Orleans Music Show with Missy Bowen" },
+    { "start": "14:00", "end": "16:00", "show": "Sittin' at the Crossroad with Big D" },
+    { "start": "16:00", "end": "19:00", "show": "Jazz from Jax Brewery with Al Colón" },
+    { "start": "19:00", "end": "22:00", "show": "R& B Oldies with Rare On The Air" },
+    { "start": "22:00", "end": "24:00", "show": "Kitchen Sink with A.J. Rodrigue and A.A." }
+  ],
+  "thursday": [
+    { "start": "00:00", "end": "02:00", "show": "Draw Fo with Slangston Hughes & Thelonious Kryptonite" },
+    { "start": "02:00", "end": "06:00", "show": "Overnight Music - Thursday" },
+    { "start": "06:00", "end": "09:00", "show": "The Morning Set with Scott Borne" },
+    { "start": "09:00", "end": "11:00", "show": "Traditional Jazz with Sally Young" },
+    { "start": "11:00", "end": "14:00", "show": "New Orleans Music Show with Michael Dominici" },
+    { "start": "14:00", "end": "16:00", "show": "Blues with DJ Giant" },
+    { "start": "16:00", "end": "19:00", "show": "Jazz from Jax Brewery with Keith Hill" },
+    { "start": "19:00", "end": "22:00", "show": "R&B with Your Cousin Dimitri" },
+    { "start": "22:00", "end": "24:00", "show": "Kitchen Sink with Jennifer Brady" }
+  ],
+  "friday": [
+    { "start": "00:00", "end": "02:00", "show": "Midnight Music" },
+    { "start": "02:00", "end": "06:00", "show": "Overnight Music - Friday" },
+    { "start": "06:00", "end": "09:00", "show": "The Morning Set with Dave Dauterive" },
+    { "start": "09:00", "end": "11:00", "show": "Traditional Jazz with the Jazz Police" },
+    { "start": "11:00", "end": "14:00", "show": "New Orleans Music Show with Black Mold or Bill DeTurk" },
+    { "start": "14:00", "end": "16:00", "show": "The Blues Breakdown" },
+    { "start": "16:00", "end": "19:00", "show": "Jazz from Jax Brewery with Charles Burchell" },
+    { "start": "19:00", "end": "22:00", "show": "Music of Mass Distraction with Black Mold" },
+    { "start": "22:00", "end": "24:00", "show": "The Rhythm Room with Allan \"Alski\" Laskey" }
+  ],
+  "saturday": [
+    { "start": "00:00", "end": "02:00", "show": "Night Train with Cool Hand" },
+    { "start": "02:00", "end": "06:00", "show": "Overnight Music - Saturday" },
+    { "start": "06:00", "end": "08:00", "show": "Music in the Glen" },
+    { "start": "08:00", "end": "10:00", "show": "Traditional Jazz with Big Pete" },
+    { "start": "10:00", "end": "12:00", "show": "New Orleans Music Show - Saturday" },
+    { "start": "12:00", "end": "14:00", "show": "Tiene Sabor (Latin Show) with Yolanda Estrada" },
+    { "start": "14:00", "end": "16:00", "show": "Tudo Bem (Brazilian) with Dean Ellis" },
+    { "start": "16:00", "end": "18:00", "show": "World Journey with Logan" },
+    { "start": "18:00", "end": "20:00", "show": "Block Party with Brice Nice" },
+    { "start": "20:00", "end": "22:00", "show": "Soul Power with Soul Sister" },
+    { "start": "22:00", "end": "24:00", "show": "Awake and Willing with Peggy Lou" }
+  ],
+  "sunday": [
+    { "start": "00:00", "end": "03:00", "show": "Blues in the Night with Jamie Dell'Apa" },
+    { "start": "03:00", "end": "06:00", "show": "Overnight Music - Sunday" },
+    { "start": "06:00", "end": "08:30", "show": "The Sunday Morning Jazz Set with Mark Landesman" },
+    { "start": "08:30", "end": "10:00", "show": "The Gospel Show with Lauren Mastro" },
+    { "start": "10:00", "end": "12:00", "show": "Old Time Country and Bluegrass with Hazel The Delta Rambler" },
+    { "start": "12:00", "end": "14:00", "show": "Cajun and Zydeco with Charles Laborde or Jim Hobbs" },
+    { "start": "14:00", "end": "16:00", "show": "Homespun Americana with Ol Man River" },
+    { "start": "16:00", "end": "18:00", "show": "Sitting In with Elizabeth Meneray" },
+    { "start": "18:00", "end": "20:00", "show": "Hep Cat's Ball with the Secretary of Swing" },
+    { "start": "20:00", "end": "22:00", "show": "Spirits of Congo Square with Baba Geno" },
+    { "start": "22:00", "end": "24:00", "show": "What's New with Duane Williams" }
+  ]
+}
+

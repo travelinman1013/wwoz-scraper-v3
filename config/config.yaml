@@ -1,7 +1,7 @@
 dryRun: false
 wwoz:
   playlistUrl: 'https://wwoz.org/programs/playlists'
-  scrapeIntervalSeconds: 300
+  scrapeIntervalSeconds: 3600
 spotify:
   clientId: '79b8a3797f7b45b3b508fd9abc32be6e'
   clientSecret: 'eef6982c906f4a57bc6ba2ae474e888a'

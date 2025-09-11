@@ -7,6 +7,9 @@ export interface ScrapedSong {
   playedDate?: string; // e.g., MM/DD
   playedTime?: string; // e.g., 12:49pm
   scrapedAt: string;
+  // Derived metadata
+  show?: string; // resolved WWOZ program/show title
+  host?: string; // show's host if present
 }
 
 // Spotify-related summaries (kept minimal to avoid importing external types)
@@ -54,4 +57,6 @@ export interface ArchiveEntry {
 
 export interface IArchiver {
   archive(entry: ArchiveEntry): Promise<void>;
+  // Optional: recompute and update per-day stats within the markdown file
+  finalizeDailyStats?(date?: string): Promise<void>;
 }

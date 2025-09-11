@@ -32,7 +32,125 @@ export class ObsidianArchiver {
             return;
         }
         const row = this.formatRow(entry);
-        await fs.promises.appendFile(filePath, `\n${row}\n`, 'utf8');
+        // Append exactly one newline after the row; avoid leading newline
+        // so we don't create blank lines between rows.
+        await fs.promises.appendFile(filePath, `${row}\n`, 'utf8');
+    }
+    async finalizeDailyStats(date) {
+        try {
+            const basePath = config.archive.basePath;
+            if (!basePath || basePath.trim().length === 0)
+                return;
+            const day = date ? dayjs(date) : dayjs();
+            if (!day.isValid())
+                return;
+            const root = this.computeBaseRoot(basePath);
+            const dir = path.join(root, day.format('YYYY'), day.format('MM'));
+            const filePath = path.join(dir, `${day.format('YYYY-MM-DD')}.md`);
+            if (!(await this.exists(filePath)))
+                return;
+            const original = await fs.promises.readFile(filePath, 'utf8');
+            const stats = this.computeStatsFromMarkdown(original);
+            const statsBlock = this.renderStatsBlock(stats);
+            const updated = this.upsertStatsBlock(original, statsBlock);
+            if (updated !== original) {
+                await fs.promises.writeFile(filePath, updated, 'utf8');
+                Logger.info(`Updated daily statistics for ${day.format('YYYY-MM-DD')} (total=${stats.total}, found=${stats.found}, notFound=${stats.notFound}, low=${stats.lowConfidence}, dups=${stats.duplicates}).`);
+            }
+        }
+        catch (err) {
+            Logger.error('Failed to finalize daily stats (non-fatal).', err);
+        }
+    }
+    computeStatsFromMarkdown(content) {
+        const lines = content.split(/\r?\n/);
+        let inTracks = false;
+        let headerSeen = false;
+        let total = 0;
+        let found = 0;
+        let notFound = 0;
+        let low = 0;
+        const seenKeys = new Set();
+        let duplicateCount = 0;
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (line.startsWith('## ')) {
+                inTracks = line.toLowerCase().startsWith('## tracks');
+                headerSeen = false;
+                continue;
+            }
+            if (!inTracks)
+                continue;
+            if (line.startsWith('| :')) {
+                // alignment row
+                headerSeen = true;
+                continue;
+            }
+            if (line.startsWith('|') && line.endsWith('|')) {
+                // skip the header titles row
+                if (!headerSeen)
+                    continue;
+                const cells = line
+                    .split('|')
+                    .map((s) => s.trim())
+                    .slice(1, -1);
+                if (cells.length < 7)
+                    continue;
+                total++;
+                const statusCell = cells[6] || '';
+                const statusLower = statusCell.toLowerCase();
+                if (statusLower.includes('not found'))
+                    notFound++;
+                else if (statusLower.includes('low confidence'))
+                    low++;
+                else if (statusLower.includes('found'))
+                    found++;
+                // Duplicate detection by normalized artist+title
+                const artist = (cells[1] || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const title = (cells[2] || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const key = `${artist}::${title}`;
+                if (artist && title) {
+                    if (seenKeys.has(key))
+                        duplicateCount++;
+                    else
+                        seenKeys.add(key);
+                }
+            }
+        }
+        return { total, found, notFound, lowConfidence: low, duplicates: duplicateCount };
+    }
+    renderStatsBlock(stats) {
+        const lines = [
+            '<!-- wwoz:stats:start -->',
+            '## Daily Statistics',
+            '',
+            '| Metric | Count |',
+            '|--------|-------|',
+            `| Total Tracks | ${stats.total} |`,
+            `| Successfully Found | ${stats.found} |`,
+            `| Not Found | ${stats.notFound} |`,
+            `| Low Confidence | ${stats.lowConfidence} |`,
+            `| Duplicates | ${stats.duplicates} |`,
+            '<!-- wwoz:stats:end -->',
+            '',
+        ];
+        return lines.join('\n');
+    }
+    upsertStatsBlock(content, statsBlock) {
+        const startMarker = '<!-- wwoz:stats:start -->';
+        const endMarker = '<!-- wwoz:stats:end -->';
+        const re = new RegExp(`${startMarker}[\
+\s\S]*?${endMarker}`);
+        if (re.test(content)) {
+            return content.replace(re, statsBlock);
+        }
+        // Insert above the Tracks section if present
+        const tracksHeadingRe = /\n##\s+Tracks\s*\n/;
+        if (tracksHeadingRe.test(content)) {
+            return content.replace(tracksHeadingRe, `\n${statsBlock}\n\n## Tracks\n`);
+        }
+        // Fallback: append at end
+        return `${content.trim()}\n\n${statsBlock}`;
     }
     resolveDate(entry) {
         const a = dayjs(entry.archivedAt);
@@ -98,9 +216,10 @@ export class ObsidianArchiver {
         const artist = this.safeCell(entry.song.artist || '-');
         const title = this.safeCell(entry.song.title || '-');
         const album = this.safeCell(entry.song.album?.trim() || '-');
+        const show = this.safeCell(entry.song.show || '-');
+        const host = this.safeCell(entry.song.host || '-');
         const { statusLabel, confidenceText, spotifyText } = this.formatStatus(entry);
-        const scraped = this.safeCell(this.pickScraped(entry));
-        const cells = [time, artist, title, album, statusLabel, confidenceText, spotifyText, scraped];
+        const cells = [time, artist, title, album, show, host, statusLabel, confidenceText, spotifyText];
         return `| ${cells.join(' | ')} |`;
     }
     safeCell(input) {
@@ -154,9 +273,5 @@ export class ObsidianArchiver {
         // Don't escape markdown link; table cell escaping handled for other fields
         const spotifyText = spotifyUrl ? `[Open](${spotifyUrl})` : '-';
         return { statusLabel, confidenceText, spotifyText };
-    }
-    pickScraped(entry) {
-        const at = dayjs(entry.song.scrapedAt || entry.archivedAt);
-        return at.isValid() ? at.format('HH:mm:ss') : '-';
     }
 }

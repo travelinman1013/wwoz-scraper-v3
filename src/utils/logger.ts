@@ -1,7 +1,9 @@
 import chalk from 'chalk';
+import dayjs from 'dayjs';
 
 function timestamp(): string {
-  return new Date().toISOString();
+  // Local time in a readable format
+  return dayjs().format('YYYY-MM-DD HH:mm:ss');
 }
 
 export class Logger {
@@ -19,7 +21,7 @@ export class Logger {
   }
 
   static debug(message: string): void {
-    console.debug(`${timestamp()} ${chalk.magenta('[DEBUG]')} ${message}`);
+    // Print debug without the noisy [DEBUG] label
+    console.debug(`${timestamp()} ${message}`);
   }
 }
-
