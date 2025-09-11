@@ -1,25 +1,20 @@
 import { Logger } from './utils/logger.js';
-import { SpotifyEnricher } from './modules/enrichers/SpotifyEnricher.js';
-async function testEnricher() {
-    Logger.info('Testing the Spotify Enricher...');
-    const enricher = new SpotifyEnricher();
-    const testSong = {
-        artist: 'The Meters',
-        title: 'Cissy Strut',
-        scrapedAt: new Date().toISOString()
+import { ObsidianArchiver } from './modules/archivers/ObsidianArchiver.js';
+async function testArchiver() {
+    Logger.info('Testing the Obsidian Archiver...');
+    const archiver = new ObsidianArchiver();
+    const testEntry = {
+        song: { artist: 'Test Artist', title: 'Test Title', scrapedAt: new Date().toISOString() },
+        status: 'found',
+        match: { confidence: 95.5, track: { external_urls: { spotify: 'http://spotify.com' } } },
+        archivedAt: new Date().toISOString(),
     };
     try {
-        const match = await enricher.findMatch(testSong);
-        if (match) {
-            Logger.info(`Found match: ${match.track.name} with ${match.confidence.toFixed(1)}% confidence.`);
-            console.log(match);
-        }
-        else {
-            Logger.warn('No confident match found.');
-        }
+        await archiver.archive(testEntry);
+        Logger.info('Archive test successful. Check your configured directory for the markdown file.');
     }
     catch (error) {
-        Logger.error('Enricher test failed', error);
+        Logger.error('Archiver test failed', error);
     }
 }
-testEnricher();
+testArchiver();

@@ -38,6 +38,18 @@ export interface IEnricher {
   getOrCreatePlaylist(name: string): Promise<{ id: string; name: string }>;
 }
 
+// Simplified Archiving
+export type ArchiveStatus = 'found' | 'not_found' | 'low_confidence' | 'unknown';
+
+export interface ArchiveEntry {
+  song: ScrapedSong;
+  status: ArchiveStatus;
+  confidence?: number; // 0..100
+  spotifyUrl?: string; // direct URL if known
+  match?: unknown; // optional raw match payload (for compatibility)
+  archivedAt: string; // ISO timestamp for when we append
+}
+
 export interface IArchiver {
-  // Define methods later
+  archive(entry: ArchiveEntry): Promise<void>;
 }

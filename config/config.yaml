@@ -10,7 +10,7 @@ spotify:
   staticPlaylistId: null
 archive:
   enabled: true
-  basePath: '/path/to/your/obsidian/vault/WWOZ'
+  basePath: '/Users/maxwell/LETSGO/MaxVault/01_Projects/wwoztracker/2025/09'
   deduplicationWindowMinutes: 60
 rateLimit:
   spotify:
