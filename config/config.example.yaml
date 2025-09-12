@@ -3,28 +3,28 @@ wwoz:
   playlistUrl: 'https://wwoz.org/programs/playlists'
   scrapeIntervalSeconds: 3600
 spotify:
-  clientId: '79b8a3797f7b45b3b508fd9abc32be6e'
-  clientSecret: 'eef6982c906f4a57bc6ba2ae474e888a'
-  refreshToken: 'AQAI5cInb9yBM9Axee1nu5ln3goqb-EHxxufYQ8rrdEtw-KY4-Jbkpnmrn9tcouq5eq-z14iDMICXeCupKA1ps3rrt5reR_XOjRk4IykzzT1j-Fl9M0KMmeCN0lUcBQK9qE'
-  userId: '1239473648'
+  clientId: 'YOUR_SPOTIFY_CLIENT_ID'
+  clientSecret: 'YOUR_SPOTIFY_CLIENT_SECRET'
+  refreshToken: 'YOUR_SPOTIFY_REFRESH_TOKEN'
+  userId: 'YOUR_SPOTIFY_USER_ID'
   staticPlaylistId: null
 archive:
   enabled: true
-  basePath: '/Users/maxwell/LETSGO/MaxVault/01_Projects/wwoztracker/2025/09'
+  basePath: '/path/to/your/Obsidian/Vault/WWOZ'
   deduplicationWindowMinutes: 60
 rateLimit:
   spotify:
     maxConcurrent: 2
     minTime: 200
-chromePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+chromePath: null
 images:
-  folderPath: 'data/processed-500'
+  folderPath: '/path/to/photos/root'
   minSharpness: 80
   minBrightness: 0.18
   duplicateHammingMax: 5
   excludeExtensions: ['.gif', '.mp4', '.mov']
   clip:
-    model: 'auto' # uses Xenova CLIP ViT-B/32 from cache (downloads once if missing)
+    model: 'auto'
     positivePrompts:
       - 'a photo of a musician performing on stage'
       - 'a live music concert performance'
@@ -38,8 +38,13 @@ images:
       - 'a selfie or portrait without stage'
       - 'a crowd without stage or performer'
       - 'a random object or product photo'
-  # mark image as used forever; never reuse
   usedDbPath: 'data/image-cache.sqlite'
 cover:
   maxKB: 256
   grayscale: true
+
+# NOTE:
+# - Copy this file to a safe location and customize values.
+# - Set CONFIG_PATH to point to your private YAML:
+#     export CONFIG_PATH=/absolute/path/to/your-config.yaml
+# - Do NOT commit real credentials.

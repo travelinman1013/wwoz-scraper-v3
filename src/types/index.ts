@@ -20,6 +20,7 @@ export interface SpotifyTrackSummary {
   artists: string[]; // display names of artists
   album?: string;
   durationMs?: number;
+  genres?: string[]; // aggregated genres from matched track's artists
 }
 
 export interface TrackMatch {

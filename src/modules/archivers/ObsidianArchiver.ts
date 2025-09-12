@@ -177,11 +177,13 @@ export class ObsidianArchiver implements IArchiver {
           .split('|')
           .map((s) => s.trim())
           .slice(1, -1);
-        if (cells.length < 7) continue;
+        if (cells.length < 5) continue;
 
         total++;
 
-        const statusCell = cells[6] || '';
+        // Status is always the third column from the end
+        const statusIdx = Math.max(0, cells.length - 3);
+        const statusCell = cells[statusIdx] || '';
         const statusLower = statusCell.toLowerCase();
         if (statusLower.includes('not found')) notFound++;
         else if (statusLower.includes('low confidence')) low++;
@@ -330,10 +332,18 @@ export class ObsidianArchiver implements IArchiver {
     const artist = this.safeCell(entry.song.artist || '-');
     const title = this.safeCell(entry.song.title || '-');
     const album = this.safeCell(entry.song.album?.trim() || '-');
+    // Genres from match payload if present (cap to 3 items)
+    let genresText = '-';
+    try {
+      const any = entry.match as any;
+      const genres = Array.isArray(any?.track?.genres) ? (any.track.genres as string[]) : [];
+      if (genres.length > 0) genresText = genres.slice(0, 3).join(', ');
+    } catch {}
+    const genres = this.safeCell(genresText);
     const show = this.safeCell(entry.song.show || '-');
     const host = this.safeCell(entry.song.host || '-');
     const { statusLabel, confidenceText, spotifyText } = this.formatStatus(entry);
-    const cells = [time, artist, title, album, show, host, statusLabel, confidenceText, spotifyText];
+    const cells = [time, artist, title, album, genres, show, host, statusLabel, confidenceText, spotifyText];
     return `| ${cells.join(' | ')} |`;
   }
 
@@ -484,6 +494,31 @@ export class ObsidianArchiver implements IArchiver {
       }
       if (alignLine === -1) return false;
 
+      // Ensure the Tracks table header contains a Genres column after Album
+      try {
+        const header = lines[headerLine];
+        if (!/\|\s*Genres\s*\|/.test(header)) {
+          const headerCells = header
+            .split('|')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          const albumIdx = headerCells.findIndex((c) => c.toLowerCase() === 'album');
+          if (albumIdx !== -1) {
+            headerCells.splice(albumIdx + 1, 0, 'Genres');
+            lines[headerLine] = `| ${headerCells.join(' | ')} |`;
+          }
+          const align = lines[alignLine];
+          const alignCells = align
+            .split('|')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (albumIdx !== -1 && albumIdx < alignCells.length) {
+            alignCells.splice(albumIdx + 1, 0, ':---');
+            lines[alignLine] = `| ${alignCells.join(' | ')} |`;
+          }
+        }
+      } catch {}
+
       // Determine the insertion index by scanning subsequent data rows
       let insertAt = alignLine + 1; // first data row position
       for (let i = alignLine + 1; i < lines.length; i++) {
@@ -561,8 +596,8 @@ export class ObsidianArchiver implements IArchiver {
           .split('|')
           .map((s) => s.trim())
           .slice(1, -1);
-        if (cells.length < 9) continue;
-        const spotifyCell = cells[8] || '';
+        if (cells.length < 2) continue;
+        const spotifyCell = cells[cells.length - 1] || '';
         const m = spotifyCell.match(/\((https?:\/\/open\.spotify\.com\/track\/([a-zA-Z0-9]+))/);
         const url = m?.[1];
         const id = m?.[2];

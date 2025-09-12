@@ -108,7 +108,8 @@ export class ImageSelector {
             catch { }
         }
         // Gather candidates by quality
-        const cands = this.db.getCandidates(config.images.minSharpness, config.images.minBrightness);
+        const allCands = this.db.getCandidates(config.images.minSharpness, config.images.minBrightness);
+        const cands = allCands.filter((r) => r.path.startsWith(folder));
         Logger.info(`Candidates after quality filter: ${cands.length}`);
         if (cands.length === 0)
             return null;
@@ -133,7 +134,40 @@ export class ImageSelector {
             .map((p) => this.db.getRow(p))
             .filter((r) => r.clipScore !== null && r.clipScore !== undefined)
             .sort((a, b) => (b.clipScore - a.clipScore) || (b.sharpness - a.sharpness) || (b.brightness - a.brightness));
-        const best = withScores[0];
+        // Selection strategy
+        let best = withScores[0];
+        const sel = config.images.selection ?? {};
+        const strategy = sel.strategy ?? 'softmax';
+        if (withScores.length > 0) {
+            if (strategy === 'top_k') {
+                const k = Math.max(1, Math.min(sel.topK ?? 200, withScores.length));
+                const idx = Math.floor(Math.random() * k);
+                best = withScores[idx];
+            }
+            else if (strategy === 'softmax') {
+                const temp = sel.temperature ?? 0.15;
+                const max = withScores[0].clipScore ?? 0;
+                // Compute softmax weights biased toward higher CLIP scores
+                const weights = withScores.map((r) => Math.exp(((r.clipScore ?? 0) - max) / Math.max(0.001, temp)));
+                const total = weights.reduce((a, b) => a + b, 0);
+                let target = Math.random() * total;
+                for (let i = 0; i < withScores.length; i++) {
+                    target -= weights[i];
+                    if (target <= 0) {
+                        best = withScores[i];
+                        break;
+                    }
+                }
+            }
+            else if (strategy === 'uniform') {
+                const idx = Math.floor(Math.random() * withScores.length);
+                best = withScores[idx];
+            }
+            else {
+                // 'best' — keep top-1 as-is
+                best = withScores[0];
+            }
+        }
         if (!best)
             return null;
         if (!dryRun)

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon --watch src --exec 'ts-node-esm src/index.ts'",
-    "build": "tsc"
+    "build": "tsc",
+    
+    "refresh:processed": "npm run build && node dist/scripts/refresh_processed.js"
   },
   "dependencies": {
     "bottleneck": "^2.19.5",

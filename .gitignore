@@ -8,3 +8,7 @@ node_modules/
 
 # Data folder - contains images and databases
 data/
+
+# Local config (contains secrets) — keep out of git
+config/*.yaml
+!config/config.example.yaml

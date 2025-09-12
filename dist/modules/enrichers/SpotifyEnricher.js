@@ -73,6 +73,23 @@ export class SpotifyEnricher {
         const best = candidates[0];
         if (best && best.confidence >= this.matchThreshold) {
             Logger.info(`Match found: ${best.track.name} (${best.confidence.toFixed(1)}%)`);
+            // Fetch genres for the best match from its artists
+            try {
+                const bestItem = items.find((t) => t.id === best.track.id);
+                const artistIds = (bestItem?.artists || [])
+                    .map((a) => a.id)
+                    .filter((id) => typeof id === 'string' && id.length > 0);
+                if (artistIds.length > 0) {
+                    const genres = await this.fetchArtistGenres(artistIds);
+                    if (genres.length > 0) {
+                        best.track.genres = genres;
+                        Logger.debug(`Genres for match: ${genres.join(', ')}`);
+                    }
+                }
+            }
+            catch (err) {
+                Logger.warn('Failed to fetch artist genres (non-fatal).');
+            }
             return best;
         }
         Logger.warn('No confident match found from search results.');
@@ -101,6 +118,24 @@ export class SpotifyEnricher {
             durationMs: t.duration_ms,
         };
         return SongMatcher.score(song, summary);
+    }
+    async fetchArtistGenres(artistIds) {
+        if (!artistIds || artistIds.length === 0)
+            return [];
+        // Spotify getArtists supports up to 50 IDs
+        const unique = Array.from(new Set(artistIds));
+        const chunks = [];
+        for (let i = 0; i < unique.length; i += 50)
+            chunks.push(unique.slice(i, i + 50));
+        const allGenres = new Set();
+        for (const chunk of chunks) {
+            const res = await this.schedule(() => this.spotify.getArtists(chunk), 'getArtists');
+            const artists = res.body.artists || [];
+            for (const a of artists) {
+                (a.genres || []).forEach((g) => allGenres.add(g));
+            }
+        }
+        return Array.from(allGenres);
     }
     async getOrCreatePlaylist(name) {
         const { userId } = config.spotify;

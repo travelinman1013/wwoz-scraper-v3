@@ -1,5 +1,8 @@
 import { pipeline } from '@xenova/transformers';
 import { Logger } from '../../utils/logger.js';
+import os from 'os';
+import path from 'path';
+import fs from 'fs/promises';
 import { loadJpegBuffer } from './image-utils.js';
 export class MusicianScorer {
     cfg;
@@ -24,7 +27,21 @@ export class MusicianScorer {
                 Logger.warn(`Skipping CLIP scoring; unreadable image: ${filePath}`);
                 return null;
             }
-            const result = await classify(buf, labels);
+            // Xenova transformers expects a path/URL (or browser-native types) — not a Buffer.
+            // Write to a temp JPEG and pass the file path, then clean up.
+            const tmpPath = path.join(os.tmpdir(), `wwoz-clip-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+            await fs.writeFile(tmpPath, buf);
+            let result = [];
+            try {
+                result = await classify(tmpPath, labels);
+            }
+            finally {
+                // Best-effort cleanup
+                try {
+                    await fs.unlink(tmpPath);
+                }
+                catch { }
+            }
             // result: array of { label, score }
             let pos = 0;
             let neg = 0;

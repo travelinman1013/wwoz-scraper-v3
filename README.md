@@ -1,17 +1,18 @@
 # WWOZ Scraper v3
 
-A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches results with Spotify, and archives discoveries into an Obsidian‑friendly Markdown daily note. It can run continuously or on demand, and can generate per‑day Spotify playlists from the archive.
+A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches results with Spotify, and archives discoveries into an Obsidian‑friendly Markdown daily note. It supports continuous operation, on‑demand runs, daily snapshot playlist generation, and optional cover selection/upload for snapshot playlists.
 
 ## Features
 
-- Playwright scraper for WWOZ playlist table
-- Spotify enrichment with rate‑limited API access
-- Duplicate detection against Spotify playlist and archive
-- Obsidian Markdown archiver with daily stats block
-- Chronological table insertion (rows sorted by time)
+- Robust Playwright scraper for WWOZ playlist table (resilient selectors + cleanup)
+- Spotify enrichment with search, scoring, rate‑limited API, playlist ops, and cover upload
+- Duplicate detection against Spotify playlist and Obsidian archive
+- Obsidian Markdown archiver with in‑file dedup and “Daily Statistics” block
+- Chronological row insertion (by played time; timestamp fallback)
 - Continuous mode with safe early‑stop after consecutive Spotify duplicates
 - Daily snapshot Spotify playlist generation from the archive
-- On‑demand CLI for snapshots and backfill
+- Image selector ranks photos (CLIP + quality) and prepares square JPEG covers
+- On‑demand CLI for single run, snapshots, backfill, and cover updates
 
 ## Repository Structure
 
@@ -20,8 +21,11 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
     - `scrapers/` → `WWOZScraper`
     - `enrichers/` → `SpotifyEnricher`
     - `archivers/` → `ObsidianArchiver`
-  - `services/` → `WorkflowService` orchestrates scrape → enrich → archive
-  - `utils/` shared utilities (`config`, `logger`, `matching`, etc.)
+    - `image-selector/` → CLIP‑based ranking + JPEG cover prep
+  - `services/`
+    - `WorkflowService` orchestrates scrape → enrich → archive/playlist
+    - `coverWorkflow.ts` cover selection/upload workflow
+  - `utils/` shared utilities (`config.ts`, `logger.ts`, `matching.ts`, `date.ts`, `showGuesser.ts`)
   - `types/` shared interfaces
 - `templates/` EJS templates for Markdown (daily archive)
 - `config/` default `config.yaml`
@@ -43,13 +47,14 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 
 - Copy or edit `config/config.yaml` (use `CONFIG_PATH` env var to point to your local copy)
 - Key fields:
-  - `wwoz.playlistUrl`
-  - `archive.basePath` (Obsidian vault or a folder; year/month subpaths are auto‑handled)
-  - `archive.deduplicationWindowMinutes`
+  - `wwoz.playlistUrl`, `wwoz.scrapeIntervalSeconds`
+  - `archive.basePath`, `archive.deduplicationWindowMinutes`
   - `spotify.userId`, `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`
   - `spotify.staticPlaylistId` (optional; if set, adds to this playlist)
   - `rateLimit.spotify.{maxConcurrent,minTime}`
-  - `chromePath` (optional; path to a browser binary if Playwright browsers not installed)
+  - `chromePath` (optional; browser path if Playwright browsers not installed)
+  - `images.*` (folderPath, thresholds, CLIP prompts, `usedDbPath`)
+  - `cover.maxKB`
 
 3) Env overrides (optional)
 
@@ -60,55 +65,67 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 
 - Dev (ts-node + nodemon): `npm run dev`
 - Build: `npm run build`
-- Start (continuous): `npm start`
-- Single run: `npm run build && node dist/index.js --once`
+- Start (continuous, interval = `wwoz.scrapeIntervalSeconds`): `npm start`
+- Tip: run latest compiled code: `npm run build && npm start`
+- Single run: `node dist/index.js --once`
 
-### Snapshot and Backfill (on demand)
+### CLI commands
 
-- Create a daily snapshot playlist from an existing archive:
-  - `npm run build && node dist/index.js --snapshot YYYY-MM-DD`
-- Backfill last N days:
-  - `npm run build && node dist/index.js --backfill 7`
+- Daily snapshot from archive: `node dist/index.js --snapshot YYYY-MM-DD`
+- Backfill last N days: `node dist/index.js --backfill 7`
+- Update cover for snapshot playlist: `node dist/index.js --update-cover [YYYY-MM-DD]`
+  - Dry run (log selection only): `--cover-dry-run`
 
 ## How It Works
 
-- `WorkflowService.runOnce()`
+- `WorkflowService`
   - Scrapes playlist rows with `WWOZScraper` (Playwright)
   - Sorts oldest → newest and enriches via `SpotifyEnricher`
-  - Checks Spotify for duplicates (fresh cache per run)
+  - Loads a fresh Spotify playlist cache at start; refreshes before/after adds
+  - Buffers playlist additions and applies them in chronological order
   - Archives each outcome to Markdown via `ObsidianArchiver`
-  - Updates/repairs the daily “Daily Statistics” section
-  - Creates a “yesterday” snapshot playlist named `WWOZTracker YYYY-MM-DD` from the archive
+  - Updates the daily “Daily Statistics” section
+  - Ensures yesterday’s daily snapshot playlist exists and is up to date
 
 - Continuous mode
-  - Repeats `runOnce` every `wwoz.scrapeIntervalSeconds`
-  - Stops early after 5 consecutive Spotify duplicates (archive duplicates do not count)
+  - Repeats on interval `wwoz.scrapeIntervalSeconds`
+  - Stops early after 5 consecutive Spotify duplicates
+  - Early archive‑duplicate detection (does not count toward stop threshold)
+  - Skips adding to today’s playlist when a song routes to another day (still archived)
 
 ## Archiving Details
 
-- File path: `<baseRoot>/YYYY/MM/YYYY-MM-DD.md`
-  - If `archive.basePath` already includes `/YYYY` or `/YYYY/MM`, those tail segments are ignored so folders roll over automatically
+- File path: `<baseRoot>/YYYY/MM/WWOZ Discoveries - <Weekday> YYYY-MM-DD.md`
+  - Also recognizes legacy names: `YYYY-MM-DD - <Weekday>.md` and `YYYY-MM-DD.md`
 - Template: `templates/daily-archive.md.ejs`
-  - Header: “WWOZ Discoveries – <day>”
-  - Tracks table columns: `Time | Artist | Title | Album | Show | Host | Status | Confidence | Spotify`
-- Row insertion
-  - New rows are inserted into the Tracks table in chronological order (not appended)
-  - Time parsing supports `h:mm AM/PM`, `h:mmam`, and `HH:mm`; unknown times go to the bottom
-- Statistics
-  - A single “Daily Statistics” block is maintained in the file; it is replaced or inserted above the Tracks section
-- In‑memory dedup
-  - `archive.deduplicationWindowMinutes` suppresses rapid repeats during the same process lifetime
+  - Frontmatter: date, station, source_url, tags
+  - Header: “WWOZ Discoveries - <Weekday, Month D, YYYY>”
+  - Table columns: `Time | Artist | Title | Album | Show | Host | Status | Confidence | Spotify`
+- Behavior
+  - Creates year/month dirs if missing; renders template on first write
+  - Routes rows to the correct file based on `song.playedDate`
+  - In‑file dedup (scan existing rows) and in‑memory dedup within `archive.deduplicationWindowMinutes`
+  - Inserts rows in chronological order (by played time; otherwise timestamp fallback)
+  - Escapes Markdown cells (pipes/newlines). Spotify cell = `[Open](url)`
+  - Computes/updates an in‑file “Daily Statistics” block
+  - Exposes `getDailySpotifyTrackUris(date)` to build snapshot playlists
 
 ## Spotify Details
 
 - `SpotifyEnricher`
   - Manages token refresh and rate limits via Bottleneck
-  - Fresh playlist cache is loaded per run to detect duplicates accurately
-  - Duplicate checks are done against the target Spotify playlist
+  - Loads and refreshes playlist cache to detect duplicates accurately
+  - Buffers and applies additions in chronological order
   - Adds tracks by URI; cache updated optimistically
 - Static vs daily playlists
   - If `spotify.staticPlaylistId` is set (or `SPOTIFY_STATIC_PLAYLIST_ID`), adds to that playlist
-  - A daily snapshot playlist `WWOZTracker YYYY-MM-DD` is also created (from the archive) to reflect chronological order for the day
+  - Daily snapshot playlist `WWOZTracker YYYY-MM-DD` is (re)built from the archive for exact chronology
+
+## Image Selector & Covers
+
+- Ranks candidate images using CLIP similarity + quality heuristics
+- Prepares square JPEG covers within `cover.maxKB`
+- `--update-cover [YYYY-MM-DD]` selects and uploads a cover for the snapshot playlist (or logs choice with `--cover-dry-run`)
 
 ## Coding Conventions
 
@@ -126,12 +143,33 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Browser path on macOS
   - If providing a `.app` path in `chromePath`, the scraper resolves the actual binary inside the bundle automatically
 
-## Security
+## Security / Config
 
 - Do not commit real secrets
 - Prefer a local YAML config file via `CONFIG_PATH`
+- Key config fields:
+  - `wwoz.playlistUrl`, `wwoz.scrapeIntervalSeconds`
+  - `archive.basePath`, `archive.deduplicationWindowMinutes`
+  - `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`, `spotify.userId`, `spotify.staticPlaylistId`
+  - `rateLimit.spotify.maxConcurrent`, `rateLimit.spotify.minTime`
+  - `chromePath`
+  - `images.*` (folderPath, thresholds, CLIP prompts, `usedDbPath`)
+  - `cover.maxKB`
+- Env override: `SPOTIFY_STATIC_PLAYLIST_ID` supersedes `spotify.staticPlaylistId`
+
+## Types (Key)
+
+- `ScrapedSong`: artist, title, album?, playedDate?, playedTime?, scrapedAt, show?, host?
+- `ArchiveEntry`: { song, status: 'found'|'not_found'|'low_confidence'|'unknown', confidence?, spotifyUrl?, match?, archivedAt }
+- `IArchiver.archive(entry): Promise<void>` (+ optional `finalizeDailyStats`, `wasArchived`, `getDailySpotifyTrackUris`)
+
+## Next Steps (Planned)
+
+- Optional: persist archive dedup keys across runs
+- Add richer CLI toggles (dry‑run per action, target playlist override)
+- Improve show/host mapping and low‑confidence feedback loop
+- Cache/ship CLIP model for faster cold starts
 
 ## License
 
 - Proprietary/private project by default. Add a license if/when appropriate.
-
