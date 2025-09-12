@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { Logger } from '../../utils/logger.js';
 import { config } from '../../utils/config.js';
 import type { ArchiveEntry, IArchiver } from '../../types/index.js';
+import { resolveSongDay } from '../../utils/date.js';
 
 export class ObsidianArchiver implements IArchiver {
   private recentKeys: Map<string, number> = new Map(); // key -> lastWrittenEpochMs
@@ -19,11 +20,11 @@ export class ObsidianArchiver implements IArchiver {
       throw new Error('archive.basePath is not configured.');
     }
 
-    // Choose date from archivedAt -> song.scrapedAt -> now
+    // Choose date from song.playedDate when available to avoid cross-day bleed
+    // (e.g., early-morning runs should archive previous-day songs to yesterday's file).
     const fileDate = this.resolveDate(entry);
     const root = this.computeBaseRoot(basePath);
-    const dir = path.join(root, fileDate.format('YYYY'), fileDate.format('MM'));
-    const filePath = path.join(dir, `${fileDate.format('YYYY-MM-DD')}.md`);
+    const { dir, filePath } = await this.getDailyFilePath(root, fileDate);
 
     await fs.promises.mkdir(dir, { recursive: true });
 
@@ -35,6 +36,20 @@ export class ObsidianArchiver implements IArchiver {
         dayjs,
       });
       await fs.promises.writeFile(filePath, content, 'utf8');
+    }
+
+    // Belt-and-suspenders: avoid archiving duplicates already present in the day's file
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      const keys = this.collectSongKeysFromMarkdown(content);
+      const key = this.buildSongKey(entry);
+      if (keys.has(key)) {
+        Logger.info(`Archive skip (already present in ${filePath}): ${entry.song.artist} - ${entry.song.title}`);
+        return;
+      }
+    } catch {
+      // Non-fatal; continue with other dedup mechanisms
+      Logger.debug('Archive duplicate pre-check failed; continuing.');
     }
 
     // In-memory dedup to avoid rapid duplicates
@@ -61,8 +76,7 @@ export class ObsidianArchiver implements IArchiver {
       if (!day.isValid()) return;
 
       const root = this.computeBaseRoot(basePath);
-      const dir = path.join(root, day.format('YYYY'), day.format('MM'));
-      const filePath = path.join(dir, `${day.format('YYYY-MM-DD')}.md`);
+      const { filePath } = await this.getDailyFilePath(root, day);
       if (!(await this.exists(filePath))) return;
 
       const original = await fs.promises.readFile(filePath, 'utf8');
@@ -92,8 +106,7 @@ export class ObsidianArchiver implements IArchiver {
     if (!day.isValid()) return [];
 
     const root = this.computeBaseRoot(basePath);
-    const dir = path.join(root, day.format('YYYY'), day.format('MM'));
-    const filePath = path.join(dir, `${day.format('YYYY-MM-DD')}.md`);
+    const { filePath } = await this.getDailyFilePath(root, day);
     if (!(await this.exists(filePath))) return [];
 
     const content = await fs.promises.readFile(filePath, 'utf8');
@@ -107,15 +120,20 @@ export class ObsidianArchiver implements IArchiver {
 
       const fileDate = this.resolveDate(entry);
       const root = this.computeBaseRoot(basePath);
-      const dir = path.join(root, fileDate.format('YYYY'), fileDate.format('MM'));
-      const filePath = path.join(dir, `${fileDate.format('YYYY-MM-DD')}.md`);
+      const { filePath } = await this.getDailyFilePath(root, fileDate);
       if (!(await this.exists(filePath))) return false;
 
       const content = await fs.promises.readFile(filePath, 'utf8');
       const keys = this.collectSongKeysFromMarkdown(content);
       Logger.debug(`Archive scan: ${filePath} has ${keys.size} track row(s).`);
       const key = this.buildSongKey(entry);
-      return keys.has(key);
+      const hit = keys.has(key);
+      if (hit) {
+        Logger.info(
+          `Archive duplicate: already present in ${filePath} -> ${entry.song.artist || '-'} - ${entry.song.title || '-'}`
+        );
+      }
+      return hit;
     } catch (err) {
       Logger.error('Failed to check archived status (non-fatal).', err);
       return false;
@@ -219,11 +237,16 @@ export class ObsidianArchiver implements IArchiver {
   }
 
   private resolveDate(entry: ArchiveEntry): dayjs.Dayjs {
+    // Prefer the scraped playedDate to select the correct daily file.
+    // Use archivedAt/scrapedAt as a reference for year inference.
+    const refIso = entry.archivedAt || entry.song.scrapedAt;
+    const byPlayed = resolveSongDay(entry.song.playedDate, refIso);
+    if (byPlayed && byPlayed.isValid()) return byPlayed;
     const a = dayjs(entry.archivedAt);
-    if (a.isValid()) return a;
+    if (a.isValid()) return a.startOf('day');
     const s = dayjs(entry.song.scrapedAt);
-    if (s.isValid()) return s;
-    return dayjs();
+    if (s.isValid()) return s.startOf('day');
+    return dayjs().startOf('day');
   }
 
   private async exists(p: string): Promise<boolean> {
@@ -256,6 +279,21 @@ export class ObsidianArchiver implements IArchiver {
       return path.sep + parts.slice(0, -1).join(path.sep);
     }
     return norm;
+  }
+
+  private async getDailyFilePath(root: string, day: dayjs.Dayjs): Promise<{ dir: string; filePath: string }> {
+    const dir = path.join(root, day.format('YYYY'), day.format('MM'));
+    const base = day.format('YYYY-MM-DD');
+    const dow = day.format('dddd');
+    const preferred = path.join(dir, `${base} - ${dow}.md`);
+    const legacy = path.join(dir, `${base}.md`);
+    try {
+      if (await this.exists(preferred)) return { dir, filePath: preferred };
+      if (await this.exists(legacy)) return { dir, filePath: legacy };
+    } catch {
+      // ignore; will fallback to preferred
+    }
+    return { dir, filePath: preferred };
   }
 
   private normalize(s: string): string {

@@ -3,6 +3,7 @@ import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import type { IArchiver, IEnricher, IScraper, ArchiveEntry, ScrapedSong, TrackMatch } from '../types/index.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
+import { resolveSongDayString } from '../utils/date.js';
 
 export class WorkflowService {
   private scraper: IScraper;
@@ -75,6 +76,15 @@ export class WorkflowService {
       const archivedAt = new Date().toISOString();
 
       try {
+        // Determine the song's calendar day using playedDate when present
+        const songDay = resolveSongDayString(song.playedDate, archivedAt || song.scrapedAt);
+        const todayStr = dayjs().format('YYYY-MM-DD');
+        const isTodaySong = songDay === todayStr;
+        Logger.debug(
+          `Date routing: ${song.artist || '-'} - ${song.title || '-'} | playedDate=${song.playedDate || '-'} ` +
+            `playedTime=${song.playedTime || '-'} -> songDay=${songDay} (today=${todayStr}, isToday=${isTodaySong})`
+        );
+
         // Enrich show/host using per-row played time (fallback to scrapedAt)
         const programInfo = this.showGuesser.guessShowFromLocalParts(
           song.playedDate,
@@ -108,6 +118,7 @@ export class WorkflowService {
         if (!match) {
           // Not found (or below confidence threshold)
           duplicatesInARow = 0;
+          Logger.info(`No Spotify match: archiving as NOT FOUND (day=${songDay}).`);
           await this.archiveOutcome(song, 'not_found', archivedAt);
           continue;
         }
@@ -115,11 +126,24 @@ export class WorkflowService {
         // Found a match; if confidence is unexpectedly low, mark and archive
         if (match.confidence < 70) {
           duplicatesInARow = 0;
+          Logger.info(
+            `Low confidence match (${match.confidence.toFixed(1)}%): archiving as LOW CONFIDENCE (day=${songDay}).`
+          );
           await this.archiveOutcome(song, 'low_confidence', archivedAt, match);
           continue;
         }
 
-        // Found a confident match; check playlist duplication
+        // If the song belongs to a different day, do not add it to today's
+        // discovery playlist. Still archive it (to its own day) below.
+        if (!isTodaySong) {
+          Logger.info(
+            `Skipping playlist add (not today). Routed to archive day=${songDay}: ${song.artist || '-'} - ${song.title || '-'}`
+          );
+          await this.archiveOutcome(song, 'found', archivedAt, match);
+          continue;
+        }
+
+        // Found a confident match; check playlist duplication (only for today's songs)
         const isDup = await this.enricher.isDuplicate(playlistId, match.track.id);
         if (isDup) {
           duplicatesInARow++;
@@ -214,8 +238,8 @@ export class WorkflowService {
   }
 
   private buildPlaylistName(): string {
-    const today = dayjs().format('YYYY-MM-DD');
-    return `WWOZ Discoveries - ${today}`;
+    const today = dayjs();
+    return `WWOZ Discoveries - ${today.format('dddd')} ${today.format('YYYY-MM-DD')}`;
   }
 
   private parsePlayedTimeToMinutes(playedTime?: string): number | null {
@@ -286,7 +310,8 @@ export class WorkflowService {
     const uris: string[] = await archiverAny.getDailySpotifyTrackUris(date);
     if (!uris || uris.length === 0) return;
 
-    const playlistName = `WWOZTracker ${date}`;
+    const d = dayjs(date);
+    const playlistName = `WWOZTracker ${d.isValid() ? d.format('dddd') + ' ' : ''}${date}`;
     const pl = await this.enricher.getOrCreatePlaylist(playlistName);
 
     // Ensure we operate against fresh remote state for the snapshot playlist

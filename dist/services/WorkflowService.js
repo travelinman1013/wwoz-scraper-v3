@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
+import { resolveSongDayString } from '../utils/date.js';
 export class WorkflowService {
     scraper;
     enricher;
@@ -64,6 +65,10 @@ export class WorkflowService {
             processed++;
             const archivedAt = new Date().toISOString();
             try {
+                // Determine the song's calendar day using playedDate when present
+                const songDay = resolveSongDayString(song.playedDate, archivedAt || song.scrapedAt);
+                const todayStr = dayjs().format('YYYY-MM-DD');
+                const isTodaySong = songDay === todayStr;
                 // Enrich show/host using per-row played time (fallback to scrapedAt)
                 const programInfo = this.showGuesser.guessShowFromLocalParts(song.playedDate, song.playedTime, song.scrapedAt);
                 if (programInfo) {
@@ -97,7 +102,13 @@ export class WorkflowService {
                     await this.archiveOutcome(song, 'low_confidence', archivedAt, match);
                     continue;
                 }
-                // Found a confident match; check playlist duplication
+                // If the song belongs to a different day, do not add it to today's
+                // discovery playlist. Still archive it (to its own day) below.
+                if (!isTodaySong) {
+                    await this.archiveOutcome(song, 'found', archivedAt, match);
+                    continue;
+                }
+                // Found a confident match; check playlist duplication (only for today's songs)
                 const isDup = await this.enricher.isDuplicate(playlistId, match.track.id);
                 if (isDup) {
                     duplicatesInARow++;
@@ -189,8 +200,8 @@ export class WorkflowService {
         }
     }
     buildPlaylistName() {
-        const today = dayjs().format('YYYY-MM-DD');
-        return `WWOZ Discoveries - ${today}`;
+        const today = dayjs();
+        return `WWOZ Discoveries - ${today.format('dddd')} ${today.format('YYYY-MM-DD')}`;
     }
     parsePlayedTimeToMinutes(playedTime) {
         if (!playedTime)
@@ -259,7 +270,8 @@ export class WorkflowService {
         const uris = await archiverAny.getDailySpotifyTrackUris(date);
         if (!uris || uris.length === 0)
             return;
-        const playlistName = `WWOZTracker ${date}`;
+        const d = dayjs(date);
+        const playlistName = `WWOZTracker ${d.isValid() ? d.format('dddd') + ' ' : ''}${date}`;
         const pl = await this.enricher.getOrCreatePlaylist(playlistName);
         // Ensure we operate against fresh remote state for the snapshot playlist
         if (this.enricher.clearPlaylistCache)
