@@ -39,3 +39,46 @@ export function resolveSongDay(playedDate, referenceIso) {
 export function resolveSongDayString(playedDate, referenceIso) {
     return resolveSongDay(playedDate, referenceIso).format('YYYY-MM-DD');
 }
+// Build display title: "WWOZ <Weekday>, <Month/full-or-AP-abbrev> <DayOrdinal>, <Year>"
+// AP-style month abbreviations: Jan., Feb., Aug., Sept., Oct., Nov., Dec.
+function apMonth(monthFull) {
+    switch (monthFull) {
+        case 'January':
+            return 'Jan.';
+        case 'February':
+            return 'Feb.';
+        case 'August':
+            return 'Aug.';
+        case 'September':
+            return 'Sept.';
+        case 'October':
+            return 'Oct.';
+        case 'November':
+            return 'Nov.';
+        case 'December':
+            return 'Dec.';
+        default:
+            return monthFull; // March, April, May, June, July stay spelled out
+    }
+}
+function ordinal(n) {
+    const j = n % 10;
+    const k = n % 100;
+    if (k >= 11 && k <= 13)
+        return `${n}th`;
+    if (j === 1)
+        return `${n}st`;
+    if (j === 2)
+        return `${n}nd`;
+    if (j === 3)
+        return `${n}rd`;
+    return `${n}th`;
+}
+export function buildWwozDisplayTitle(d) {
+    const dow = d.format('dddd');
+    const monthFull = d.format('MMMM');
+    const month = apMonth(monthFull);
+    const day = ordinal(d.date());
+    const year = d.format('YYYY');
+    return `WWOZ ${dow}, ${month} ${day}, ${year}`;
+}

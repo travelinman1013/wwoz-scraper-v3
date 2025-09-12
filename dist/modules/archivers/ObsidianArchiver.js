@@ -4,7 +4,7 @@ import ejs from 'ejs';
 import dayjs from 'dayjs';
 import { Logger } from '../../utils/logger.js';
 import { config } from '../../utils/config.js';
-import { resolveSongDay } from '../../utils/date.js';
+import { resolveSongDay, buildWwozDisplayTitle } from '../../utils/date.js';
 export class ObsidianArchiver {
     recentKeys = new Map(); // key -> lastWrittenEpochMs
     clearDedupCache() {
@@ -112,7 +112,11 @@ export class ObsidianArchiver {
             const keys = this.collectSongKeysFromMarkdown(content);
             Logger.debug(`Archive scan: ${filePath} has ${keys.size} track row(s).`);
             const key = this.buildSongKey(entry);
-            return keys.has(key);
+            const hit = keys.has(key);
+            if (hit) {
+                Logger.info(`Archive duplicate: already present in ${filePath} -> ${entry.song.artist || '-'} - ${entry.song.title || '-'}`);
+            }
+            return hit;
         }
         catch (err) {
             Logger.error('Failed to check archived status (non-fatal).', err);
@@ -258,11 +262,15 @@ export class ObsidianArchiver {
         const dir = path.join(root, day.format('YYYY'), day.format('MM'));
         const base = day.format('YYYY-MM-DD');
         const dow = day.format('dddd');
-        const preferred = path.join(dir, `${base} - ${dow}.md`);
+        const friendly = `${buildWwozDisplayTitle(day)}.md`;
+        const preferred = path.join(dir, friendly);
+        const prevPreferred = path.join(dir, `${base} - ${dow}.md`);
         const legacy = path.join(dir, `${base}.md`);
         try {
             if (await this.exists(preferred))
                 return { dir, filePath: preferred };
+            if (await this.exists(prevPreferred))
+                return { dir, filePath: prevPreferred };
             if (await this.exists(legacy))
                 return { dir, filePath: legacy };
         }

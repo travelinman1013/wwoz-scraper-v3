@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { Logger } from '../../utils/logger.js';
 import { config } from '../../utils/config.js';
 import type { ArchiveEntry, IArchiver } from '../../types/index.js';
-import { resolveSongDay } from '../../utils/date.js';
+import { resolveSongDay, buildWwozDisplayTitle } from '../../utils/date.js';
 
 export class ObsidianArchiver implements IArchiver {
   private recentKeys: Map<string, number> = new Map(); // key -> lastWrittenEpochMs
@@ -285,10 +285,13 @@ export class ObsidianArchiver implements IArchiver {
     const dir = path.join(root, day.format('YYYY'), day.format('MM'));
     const base = day.format('YYYY-MM-DD');
     const dow = day.format('dddd');
-    const preferred = path.join(dir, `${base} - ${dow}.md`);
+    const friendly = `${buildWwozDisplayTitle(day)}.md`;
+    const preferred = path.join(dir, friendly);
+    const prevPreferred = path.join(dir, `${base} - ${dow}.md`);
     const legacy = path.join(dir, `${base}.md`);
     try {
       if (await this.exists(preferred)) return { dir, filePath: preferred };
+      if (await this.exists(prevPreferred)) return { dir, filePath: prevPreferred };
       if (await this.exists(legacy)) return { dir, filePath: legacy };
     } catch {
       // ignore; will fallback to preferred

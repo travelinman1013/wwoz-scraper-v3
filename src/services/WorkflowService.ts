@@ -3,7 +3,7 @@ import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import type { IArchiver, IEnricher, IScraper, ArchiveEntry, ScrapedSong, TrackMatch } from '../types/index.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
-import { resolveSongDayString } from '../utils/date.js';
+import { resolveSongDayString, buildWwozDisplayTitle } from '../utils/date.js';
 
 export class WorkflowService {
   private scraper: IScraper;
@@ -311,7 +311,7 @@ export class WorkflowService {
     if (!uris || uris.length === 0) return;
 
     const d = dayjs(date);
-    const playlistName = `WWOZTracker ${d.isValid() ? d.format('dddd') + ' ' : ''}${date}`;
+    const playlistName = d.isValid() ? buildWwozDisplayTitle(d) : `WWOZ ${date}`;
     const pl = await this.enricher.getOrCreatePlaylist(playlistName);
 
     // Ensure we operate against fresh remote state for the snapshot playlist
