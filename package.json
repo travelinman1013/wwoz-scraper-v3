@@ -16,11 +16,7 @@
     "commander": "^12.0.0",
     "dayjs": "^1.11.10",
     "ejs": "^3.1.9",
-    "@xenova/transformers": "^2.15.0",
-    "better-sqlite3": "^9.4.0",
-    "exiftool-vendored": "^28.3.0",
     "js-yaml": "^4.1.0",
-    "sharp": "^0.33.4",
     "playwright": "^1.42.1",
     "spotify-web-api-node": "^5.0.2"
   },

@@ -2,8 +2,8 @@
 
 ## Structure
 - Source: `src/` (TypeScript, NodeNext ESM)
-  - `src/modules/` → features (`scrapers/`, `enrichers/`, `archivers/`, `image-selector/`)
-  - `src/services/` → workflows (`WorkflowService`, `coverWorkflow.ts`)
+  - `src/modules/` → features (`scrapers/`, `enrichers/`, `archivers/`)
+  - `src/services/` → workflows (`WorkflowService`)
   - `src/utils/` → shared (`config.ts`, `logger.ts`, `matching.ts`, `date.ts`, `showGuesser.ts`)
   - `src/types/` → shared interfaces and types
 - Build: `dist/` (compiled JS)
@@ -26,7 +26,6 @@
 - Scraper: `WWOZScraper` (Playwright) parses playlist rows (robust selectors + cleanup).
 - Enricher: `SpotifyEnricher` handles search, scoring, rate-limited API, playlist ops, cover upload.
 - Archiver: `ObsidianArchiver` writes daily Markdown, dedups, keeps rows chronologically, updates stats.
-- Image Selector: ranks photos via CLIP + quality, prepares square JPEG covers.
 - Workflow: `WorkflowService` orchestrates scrape → enrich → archive/playlist; snapshots and stats.
 
 ## CLI Entrypoint
@@ -35,7 +34,7 @@
 - Single run: `node dist/index.js --once`.
 - Snapshots: `--snapshot YYYY-MM-DD` (build daily snapshot playlist from archive and exit).
 - Backfill: `--backfill <days>` (create past N daily snapshots and exit).
-- Cover: `--update-cover [YYYY-MM-DD]` and `--cover-dry-run` (pick/upload snapshot playlist cover).
+  
 
 ## Types (Key)
 - `ScrapedSong`: artist, title, album?, playedDate?, playedTime?, scrapedAt, show?, host?
@@ -74,12 +73,9 @@
   - `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`, `spotify.userId`, `spotify.staticPlaylistId`
   - `rateLimit.spotify.maxConcurrent`, `rateLimit.spotify.minTime`
   - `chromePath` (or install Playwright browsers)
-  - `images.*` (folderPath, thresholds, CLIP prompts, `usedDbPath`)
-  - `cover.maxKB`
 - Env override: `SPOTIFY_STATIC_PLAYLIST_ID` supersedes `spotify.staticPlaylistId`.
 
 ## Next Steps (Planned)
 - Optional: persist archive dedup keys across runs.
 - Add richer CLI toggles (dry-run per action, target playlist override).
 - Improve show/host mapping and low-confidence feedback loop.
-- Cache/ship CLIP model for faster cold starts.

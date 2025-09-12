@@ -30,32 +30,7 @@ export interface RateLimitConfig {
   spotify: RateLimitBucketConfig;
 }
 
-export interface ImagesConfig {
-  folderPath: string;
-  minSharpness: number;
-  minBrightness: number; // 0..1
-  duplicateHammingMax: number;
-  excludeExtensions: string[];
-  clip: {
-    model: 'auto' | string; // 'auto' uses Xenova cache path
-    positivePrompts: string[];
-    negativePrompts: string[];
-  };
-  usedDbPath: string; // sqlite path
-  selection?: {
-    // How to pick the cover candidate from eligible images
-    strategy?: 'best' | 'softmax' | 'top_k' | 'uniform';
-    // For 'softmax': higher temperature = more random (0.05..0.5 typical)
-    temperature?: number;
-    // For 'top_k': pick uniformly from the top K ranked by score
-    topK?: number;
-  };
-}
-
-export interface CoverConfig {
-  maxKB: number; // max JPEG size for Spotify
-  grayscale?: boolean; // optional: convert to B&W before upload
-}
+// Image selector and cover functionality removed
 
 export interface AppConfig {
   dryRun: boolean;
@@ -64,8 +39,6 @@ export interface AppConfig {
   archive: ArchiveConfig;
   rateLimit: RateLimitConfig;
   chromePath: string | null;
-  images: ImagesConfig;
-  cover: CoverConfig;
 }
 
 function resolveConfigPath(): string {
@@ -100,12 +73,7 @@ export function loadConfig(filePath?: string): AppConfig {
   if (!cfg.spotify || typeof cfg.spotify.clientId !== 'string' || typeof cfg.spotify.clientSecret !== 'string') {
     throw new Error('Invalid configuration: spotify credentials are required.');
   }
-  if (!cfg.images || typeof cfg.images.folderPath !== 'string') {
-    throw new Error('Invalid configuration: images.folderPath is required.');
-  }
-  if (!cfg.cover || typeof cfg.cover.maxKB !== 'number') {
-    throw new Error('Invalid configuration: cover.maxKB is required.');
-  }
+  // image selector removed — no image/cover config required
 
   // Environment overrides (non-secret convenience)
   const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
@@ -113,21 +81,7 @@ export function loadConfig(filePath?: string): AppConfig {
     cfg.spotify.staticPlaylistId = envStaticPlaylist.trim();
   }
 
-  // Defaults for image selection strategy (maintains backward compatibility)
-  if (!cfg.images.selection) cfg.images.selection = {};
-  if (!cfg.images.selection.strategy) cfg.images.selection.strategy = 'softmax';
-  if (
-    cfg.images.selection.strategy === 'softmax' &&
-    (cfg.images.selection.temperature === undefined || cfg.images.selection.temperature === null)
-  ) {
-    cfg.images.selection.temperature = 0.15; // moderate randomness toward higher-scored images
-  }
-  if (
-    cfg.images.selection.strategy === 'top_k' &&
-    (cfg.images.selection.topK === undefined || cfg.images.selection.topK === null)
-  ) {
-    cfg.images.selection.topK = 200; // pick from the top 200 by default
-  }
+  // No image selection defaults
 
   return cfg;
 }

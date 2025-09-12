@@ -31,30 +31,13 @@ export function loadConfig(filePath) {
     if (!cfg.spotify || typeof cfg.spotify.clientId !== 'string' || typeof cfg.spotify.clientSecret !== 'string') {
         throw new Error('Invalid configuration: spotify credentials are required.');
     }
-    if (!cfg.images || typeof cfg.images.folderPath !== 'string') {
-        throw new Error('Invalid configuration: images.folderPath is required.');
-    }
-    if (!cfg.cover || typeof cfg.cover.maxKB !== 'number') {
-        throw new Error('Invalid configuration: cover.maxKB is required.');
-    }
+    // image selector removed — no image/cover config required
     // Environment overrides (non-secret convenience)
     const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
     if (envStaticPlaylist && envStaticPlaylist.trim().length > 0) {
         cfg.spotify.staticPlaylistId = envStaticPlaylist.trim();
     }
-    // Defaults for image selection strategy (maintains backward compatibility)
-    if (!cfg.images.selection)
-        cfg.images.selection = {};
-    if (!cfg.images.selection.strategy)
-        cfg.images.selection.strategy = 'softmax';
-    if (cfg.images.selection.strategy === 'softmax' &&
-        (cfg.images.selection.temperature === undefined || cfg.images.selection.temperature === null)) {
-        cfg.images.selection.temperature = 0.15; // moderate randomness toward higher-scored images
-    }
-    if (cfg.images.selection.strategy === 'top_k' &&
-        (cfg.images.selection.topK === undefined || cfg.images.selection.topK === null)) {
-        cfg.images.selection.topK = 200; // pick from the top 200 by default
-    }
+    // No image selection defaults
     return cfg;
 }
 export const config = loadConfig();

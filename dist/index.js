@@ -11,9 +11,7 @@ program
     .option('--once', 'Run the scraper a single time and exit')
     .option('--snapshot <date>', 'Create a daily snapshot playlist for YYYY-MM-DD and exit')
     .option('--backfill <days>', 'Create daily snapshot playlists for the past <days> days and exit', (v) => parseInt(v, 10))
-    .option('--update-cover [date]', 'Pick a musician photo and set as cover for snapshot playlist of YYYY-MM-DD (default: yesterday).')
-    .option('--cover-dry-run', 'Do not upload; only select and print the chosen image.')
-    .option('--index-images', 'Index all images and compute missing CLIP scores, then exit')
+    // cover/image-selection functionality removed
     .action(async (options) => {
     const scraper = new WWOZScraper();
     const enricher = new SpotifyEnricher();
@@ -31,19 +29,7 @@ program
         await workflow.backfillDailySnapshots(days);
         return;
     }
-    if (typeof options.updateCover !== 'undefined') {
-        const { updateCover, coverDryRun } = options;
-        const dateArg = typeof updateCover === 'string' ? updateCover : undefined;
-        const date = dateArg ?? new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
-        const { updateSnapshotCover } = await import('./services/coverWorkflow.js');
-        await updateSnapshotCover(date, !!coverDryRun);
-        return;
-    }
-    if (options.indexImages) {
-        const { indexAllImages } = await import('./services/imageIndex.js');
-        await indexAllImages();
-        return;
-    }
+    // image cover update and indexing commands removed
     if (options.once) {
         Logger.info('Starting a single run...');
         await workflow.runOnce();

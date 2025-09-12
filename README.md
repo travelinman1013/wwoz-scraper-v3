@@ -1,6 +1,6 @@
 # WWOZ Scraper v3
 
-A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches results with Spotify, and archives discoveries into an Obsidian‑friendly Markdown daily note. It supports continuous operation, on‑demand runs, daily snapshot playlist generation, and optional cover selection/upload for snapshot playlists.
+A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches results with Spotify, and archives discoveries into an Obsidian‑friendly Markdown daily note. It supports continuous operation, on‑demand runs, and daily snapshot playlist generation.
 
 ## Features
 
@@ -11,8 +11,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Chronological row insertion (by played time; timestamp fallback)
 - Continuous mode with safe early‑stop after consecutive Spotify duplicates
 - Daily snapshot Spotify playlist generation from the archive
-- Image selector ranks photos (CLIP + quality) and prepares square JPEG covers
-- On‑demand CLI for single run, snapshots, backfill, and cover updates
+- On‑demand CLI for single run, snapshots, and backfill
 
 ## Repository Structure
 
@@ -21,10 +20,8 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
     - `scrapers/` → `WWOZScraper`
     - `enrichers/` → `SpotifyEnricher`
     - `archivers/` → `ObsidianArchiver`
-    - `image-selector/` → CLIP‑based ranking + JPEG cover prep
   - `services/`
     - `WorkflowService` orchestrates scrape → enrich → archive/playlist
-    - `coverWorkflow.ts` cover selection/upload workflow
   - `utils/` shared utilities (`config.ts`, `logger.ts`, `matching.ts`, `date.ts`, `showGuesser.ts`)
   - `types/` shared interfaces
 - `templates/` EJS templates for Markdown (daily archive)
@@ -53,8 +50,6 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
   - `spotify.staticPlaylistId` (optional; if set, adds to this playlist)
   - `rateLimit.spotify.{maxConcurrent,minTime}`
   - `chromePath` (optional; browser path if Playwright browsers not installed)
-  - `images.*` (folderPath, thresholds, CLIP prompts, `usedDbPath`)
-  - `cover.maxKB`
 
 3) Env overrides (optional)
 
@@ -73,8 +68,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 
 - Daily snapshot from archive: `node dist/index.js --snapshot YYYY-MM-DD`
 - Backfill last N days: `node dist/index.js --backfill 7`
-- Update cover for snapshot playlist: `node dist/index.js --update-cover [YYYY-MM-DD]`
-  - Dry run (log selection only): `--cover-dry-run`
+ 
 
 ## How It Works
 
@@ -121,11 +115,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
   - If `spotify.staticPlaylistId` is set (or `SPOTIFY_STATIC_PLAYLIST_ID`), adds to that playlist
   - Daily snapshot playlist `WWOZTracker YYYY-MM-DD` is (re)built from the archive for exact chronology
 
-## Image Selector & Covers
-
-- Ranks candidate images using CLIP similarity + quality heuristics
-- Prepares square JPEG covers within `cover.maxKB`
-- `--update-cover [YYYY-MM-DD]` selects and uploads a cover for the snapshot playlist (or logs choice with `--cover-dry-run`)
+ 
 
 ## Coding Conventions
 
@@ -153,8 +143,6 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
   - `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`, `spotify.userId`, `spotify.staticPlaylistId`
   - `rateLimit.spotify.maxConcurrent`, `rateLimit.spotify.minTime`
   - `chromePath`
-  - `images.*` (folderPath, thresholds, CLIP prompts, `usedDbPath`)
-  - `cover.maxKB`
 - Env override: `SPOTIFY_STATIC_PLAYLIST_ID` supersedes `spotify.staticPlaylistId`
 
 ## Types (Key)
@@ -168,7 +156,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Optional: persist archive dedup keys across runs
 - Add richer CLI toggles (dry‑run per action, target playlist override)
 - Improve show/host mapping and low‑confidence feedback loop
-- Cache/ship CLIP model for faster cold starts
+ 
 
 ## License
 

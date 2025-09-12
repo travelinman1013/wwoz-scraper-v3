@@ -17,31 +17,6 @@ rateLimit:
     maxConcurrent: 2
     minTime: 200
 chromePath: null
-images:
-  folderPath: '/path/to/photos/root'
-  minSharpness: 80
-  minBrightness: 0.18
-  duplicateHammingMax: 5
-  excludeExtensions: ['.gif', '.mp4', '.mov']
-  clip:
-    model: 'auto'
-    positivePrompts:
-      - 'a photo of a musician performing on stage'
-      - 'a live music concert performance'
-      - 'a person singing into a microphone on stage'
-      - 'a guitarist performing on stage'
-      - 'a drummer performing on stage'
-      - 'a dj performing on stage'
-    negativePrompts:
-      - 'a landscape or building'
-      - 'a pet or animal'
-      - 'a selfie or portrait without stage'
-      - 'a crowd without stage or performer'
-      - 'a random object or product photo'
-  usedDbPath: 'data/image-cache.sqlite'
-cover:
-  maxKB: 256
-  grayscale: true
 
 # NOTE:
 # - Copy this file to a safe location and customize values.
