@@ -31,6 +31,12 @@ export function loadConfig(filePath) {
     if (!cfg.spotify || typeof cfg.spotify.clientId !== 'string' || typeof cfg.spotify.clientSecret !== 'string') {
         throw new Error('Invalid configuration: spotify credentials are required.');
     }
+    if (!cfg.images || typeof cfg.images.folderPath !== 'string') {
+        throw new Error('Invalid configuration: images.folderPath is required.');
+    }
+    if (!cfg.cover || typeof cfg.cover.maxKB !== 'number') {
+        throw new Error('Invalid configuration: cover.maxKB is required.');
+    }
     // Environment overrides (non-secret convenience)
     const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
     if (envStaticPlaylist && envStaticPlaylist.trim().length > 0) {

@@ -5,3 +5,6 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Data folder - contains images and databases
+data/

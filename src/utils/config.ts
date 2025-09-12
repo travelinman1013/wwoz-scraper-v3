@@ -30,6 +30,25 @@ export interface RateLimitConfig {
   spotify: RateLimitBucketConfig;
 }
 
+export interface ImagesConfig {
+  folderPath: string;
+  minSharpness: number;
+  minBrightness: number; // 0..1
+  duplicateHammingMax: number;
+  excludeExtensions: string[];
+  clip: {
+    model: 'auto' | string; // 'auto' uses Xenova cache path
+    positivePrompts: string[];
+    negativePrompts: string[];
+  };
+  usedDbPath: string; // sqlite path
+}
+
+export interface CoverConfig {
+  maxKB: number; // max JPEG size for Spotify
+  grayscale?: boolean; // optional: convert to B&W before upload
+}
+
 export interface AppConfig {
   dryRun: boolean;
   wwoz: WwozConfig;
@@ -37,6 +56,8 @@ export interface AppConfig {
   archive: ArchiveConfig;
   rateLimit: RateLimitConfig;
   chromePath: string | null;
+  images: ImagesConfig;
+  cover: CoverConfig;
 }
 
 function resolveConfigPath(): string {
@@ -70,6 +91,12 @@ export function loadConfig(filePath?: string): AppConfig {
   }
   if (!cfg.spotify || typeof cfg.spotify.clientId !== 'string' || typeof cfg.spotify.clientSecret !== 'string') {
     throw new Error('Invalid configuration: spotify credentials are required.');
+  }
+  if (!cfg.images || typeof cfg.images.folderPath !== 'string') {
+    throw new Error('Invalid configuration: images.folderPath is required.');
+  }
+  if (!cfg.cover || typeof cfg.cover.maxKB !== 'number') {
+    throw new Error('Invalid configuration: cover.maxKB is required.');
   }
 
   // Environment overrides (non-secret convenience)

@@ -5,7 +5,7 @@ wwoz:
 spotify:
   clientId: '79b8a3797f7b45b3b508fd9abc32be6e'
   clientSecret: 'eef6982c906f4a57bc6ba2ae474e888a'
-  refreshToken: 'AQDIVFXrjF3IdmyzriEzZO2vRcYGewOEm-dO7Mwq1IXAU4BRhgipH5f_gLuq5aFD-lykjw0IewsXUD72esBJOzJjExSJQOBPLlg4xb3OSNL3EhMsa3FywfpMwQFU-rtCYH4'
+  refreshToken: 'AQAI5cInb9yBM9Axee1nu5ln3goqb-EHxxufYQ8rrdEtw-KY4-Jbkpnmrn9tcouq5eq-z14iDMICXeCupKA1ps3rrt5reR_XOjRk4IykzzT1j-Fl9M0KMmeCN0lUcBQK9qE'
   userId: '1239473648'
   staticPlaylistId: null
 archive:
@@ -17,3 +17,29 @@ rateLimit:
     maxConcurrent: 2
     minTime: 200
 chromePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+images:
+  folderPath: 'data/processed-500'
+  minSharpness: 80
+  minBrightness: 0.18
+  duplicateHammingMax: 5
+  excludeExtensions: ['.gif', '.mp4', '.mov']
+  clip:
+    model: 'auto' # uses Xenova CLIP ViT-B/32 from cache (downloads once if missing)
+    positivePrompts:
+      - 'a photo of a musician performing on stage'
+      - 'a live music concert performance'
+      - 'a person singing into a microphone on stage'
+      - 'a guitarist performing on stage'
+      - 'a drummer performing on stage'
+      - 'a dj performing on stage'
+    negativePrompts:
+      - 'a landscape or building'
+      - 'a pet or animal'
+      - 'a selfie or portrait without stage'
+      - 'a crowd without stage or performer'
+      - 'a random object or product photo'
+  # mark image as used forever; never reuse
+  usedDbPath: 'data/image-cache.sqlite'
+cover:
+  maxKB: 256
+  grayscale: true

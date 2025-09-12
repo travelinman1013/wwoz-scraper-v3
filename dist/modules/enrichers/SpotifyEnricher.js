@@ -187,4 +187,12 @@ export class SpotifyEnricher {
             this.playlistCache.get(playlistId).add(id);
         }
     }
+    async uploadPlaylistCover(playlistId, jpegBase64) {
+        if (config.dryRun) {
+            Logger.info(`[dryRun] Would upload custom cover to playlist ${playlistId} (base64 JPEG ${Math.ceil(jpegBase64.length / 1024)} KB)`);
+            return;
+        }
+        Logger.info(`Uploading custom cover image to playlist ${playlistId}...`);
+        await this.schedule(() => this.spotify.uploadCustomPlaylistCoverImage(playlistId, jpegBase64), 'uploadCustomPlaylistCoverImage');
+    }
 }

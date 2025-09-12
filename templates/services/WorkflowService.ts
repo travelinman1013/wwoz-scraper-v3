@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
 import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
+import type { IArchiver, IEnricher, IScraper, ArchiveEntry, ScrapedSong, TrackMatch } from '../types/index.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
 import { resolveSongDayString, buildWwozDisplayTitle } from '../utils/date.js';
-import type { IArchiver, IEnricher, IScraper, ScrapedSong, TrackMatch, ArchiveEntry } from '../types/index.js';
 
 export class WorkflowService {
   private scraper: IScraper;
@@ -20,14 +20,21 @@ export class WorkflowService {
 
   async runOnce(): Promise<void> {
     Logger.info(`Workflow run started. dryRun=${config.dryRun}. Scraping playlist...`);
+
     const songs = await this.scraper.scrape();
     if (songs.length === 0) {
       Logger.warn('No songs scraped. Nothing to process.');
       return;
     }
 
-    // Process newest-first to hit fresh items and stop early on dups in continuous mode
-    const songsOrdered = songs.slice().sort((a, b) => this.sortKeyForSong(b) - this.sortKeyForSong(a));
+    // Process in reverse-chronological order (newest -> oldest) so that
+    // continuous mode hits fresh items first and stops after encountering
+    // recent duplicates, enabling quick resume when new tracks appear.
+    const songsOrdered = songs.slice().sort((a, b) => {
+      const aKey = this.sortKeyForSong(a);
+      const bKey = this.sortKeyForSong(b);
+      return bKey - aKey;
+    });
 
     // Resolve target playlist
     let playlistId: string;
@@ -43,30 +50,33 @@ export class WorkflowService {
       playlistName = pl.name;
     }
 
-    // Reset and load a fresh cache
+    // Reset and load a fresh cache to reflect current remote state
+    // Clear all cached playlists to avoid any cross-run leakage
     if (this.enricher.clearPlaylistCache) {
       Logger.debug('Clearing all in-memory Spotify playlist caches before loading fresh state...');
       this.enricher.clearPlaylistCache();
     }
     await this.enricher.loadPlaylistCache(playlistId);
     const initialCount = typeof this.enricher.getCachedTrackCount === 'function'
-      ? this.enricher.getCachedTrackCount!(playlistId)
+      ? this.enricher.getCachedTrackCount(playlistId)
       : 0;
 
-    // Clear archiver in-memory dedup at start
-    if (typeof this.archiver.clearDedupCache === 'function') {
-      this.archiver.clearDedupCache!();
+    // Clear archiver's in-memory duplicate cache at the start of each run/session
+    if (typeof (this.archiver as any).clearDedupCache === 'function') {
+      (this.archiver as any).clearDedupCache();
     }
 
     let processed = 0;
     let added = 0;
-    const pendingAdds: { uri: string; id: string; timeKey: number }[] = [];
+    // Buffer additions so we can add to Spotify after archiving, in chronological order
+    const pendingAdds: Array<{ uri: string; id: string; timeKey: number }> = [];
     let duplicatesInARow = 0;
-    let stoppedDueToDuplicates = false;
 
+    let stoppedDueToDuplicates = false;
     for (const song of songsOrdered) {
       processed++;
       const archivedAt = new Date().toISOString();
+
       try {
         // Determine the song's calendar day using playedDate when present
         const songDay = resolveSongDayString(song.playedDate, archivedAt || song.scrapedAt);
@@ -78,27 +88,35 @@ export class WorkflowService {
         );
 
         // Enrich show/host using per-row played time (fallback to scrapedAt)
-        const programInfo = this.showGuesser.guessShowFromLocalParts(song.playedDate, song.playedTime, song.scrapedAt);
+        const programInfo = this.showGuesser.guessShowFromLocalParts(
+          song.playedDate,
+          song.playedTime,
+          song.scrapedAt
+        );
         if (programInfo) {
           song.show = programInfo.show;
           song.host = programInfo.host;
         }
 
-        // Early duplicate detection against archive
-        if (typeof this.archiver.wasArchived === 'function') {
-          const alreadyArchived = await this.archiver.wasArchived!({
+        // Early duplicate detection against archive (covers NOT FOUND duplicates)
+        if (typeof (this.archiver as any).wasArchived === 'function') {
+          const alreadyArchived = await (this.archiver as any).wasArchived({
             song,
             status: 'unknown',
             archivedAt,
-          } as ArchiveEntry);
+          });
           if (alreadyArchived) {
             // Do NOT count archive duplicates toward the stop threshold.
-            Logger.info(`Archive duplicate encountered (ignored for stop-threshold): ${song.artist} - ${song.title}.`);
+            // The stop heuristic should be driven by Spotify playlist duplicates only.
+            Logger.info(
+              `Archive duplicate encountered (ignored for stop-threshold): ${song.artist} - ${song.title}.`
+            );
             continue;
           }
         }
 
         const match = await this.enricher.findMatch(song);
+
         if (!match) {
           // Not found (or below confidence threshold)
           duplicatesInARow = 0;
@@ -107,13 +125,35 @@ export class WorkflowService {
           continue;
         }
 
-        // Check for duplicate in Spotify playlist
+        // Found a match; if confidence is unexpectedly low, mark and archive
+        if (match.confidence < 70) {
+          duplicatesInARow = 0;
+          Logger.info(
+            `Low confidence match (${match.confidence.toFixed(1)}%): archiving as LOW CONFIDENCE (day=${songDay}).`
+          );
+          await this.archiveOutcome(song, 'low_confidence', archivedAt, match);
+          continue;
+        }
+
+        // If the song belongs to a different day, do not add it to today's
+        // discovery playlist. Still archive it (to its own day) below.
+        if (!isTodaySong) {
+          Logger.info(
+            `Skipping playlist add (not today). Routed to archive day=${songDay}: ${song.artist || '-'} - ${song.title || '-'}`
+          );
+          await this.archiveOutcome(song, 'found', archivedAt, match);
+          continue;
+        }
+
+        // Found a confident match; check playlist duplication (only for today's songs)
         const isDup = await this.enricher.isDuplicate(playlistId, match.track.id);
         if (isDup) {
           duplicatesInARow++;
-          await this.archiveOutcome(song, 'found', archivedAt, match);
+          Logger.info(
+            `Spotify duplicate in ${playlistName}: ${song.artist} - ${song.title} (track ${match.track.id}). ${duplicatesInARow} dup(s) in a row.`
+          );
           if (duplicatesInARow >= 5) {
-            Logger.info('Encountered 5 consecutive Spotify duplicates; stopping early.');
+            Logger.info('Reached 5 consecutive duplicates. Stopping early.');
             stoppedDueToDuplicates = true;
             break;
           }
@@ -123,7 +163,7 @@ export class WorkflowService {
         // New addition: archive first, then queue for playlist add
         duplicatesInARow = 0;
         await this.archiveOutcome(song, 'found', archivedAt, match);
-
+        // Defer adding to playlist so order matches archive order
         const minutes = this.parsePlayedTimeToMinutes(song.playedTime);
         const timeKey = minutes !== null
           ? minutes
@@ -134,15 +174,16 @@ export class WorkflowService {
         pendingAdds.push({ uri: match.track.uri, id: match.track.id, timeKey });
       } catch (err) {
         duplicatesInARow = 0; // treat errors as non-dup to avoid premature stop
-        Logger.error('Error processing song. Continuing with next.', err as Error);
+        Logger.error('Error processing song. Continuing with next.', err);
+        // Archive as unknown to capture the occurrence
         await this.archiveOutcome(song, 'unknown', archivedAt);
       }
       if (stoppedDueToDuplicates) break;
     }
-
     // Perform buffered playlist additions in chronological order (to match archive)
     try {
       if (pendingAdds.length > 0) {
+        // Ensure we operate against fresh remote state prior to adding batch
         if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(playlistId);
         await this.enricher.loadPlaylistCache(playlistId);
         pendingAdds.sort((a, b) => a.timeKey - b.timeKey);
@@ -154,19 +195,20 @@ export class WorkflowService {
         }
       }
     } catch (err) {
-      Logger.error('Failed during deferred playlist additions (non-fatal).', err as Error);
+      Logger.error('Failed during deferred playlist additions (non-fatal).', err);
     }
 
     // Optionally refresh to compute actual added count from remote
     let remoteAdded = added;
     try {
+      // Clear all cached playlists again before recompute to ensure accuracy
       if (this.enricher.clearPlaylistCache) {
         Logger.debug('Clearing all in-memory Spotify playlist caches before recomputing final counts...');
         this.enricher.clearPlaylistCache();
       }
       await this.enricher.loadPlaylistCache(playlistId);
       const finalCount = typeof this.enricher.getCachedTrackCount === 'function'
-        ? this.enricher.getCachedTrackCount!(playlistId)
+        ? this.enricher.getCachedTrackCount(playlistId)
         : initialCount + added;
       remoteAdded = Math.max(0, finalCount - initialCount);
     } catch {
@@ -178,18 +220,20 @@ export class WorkflowService {
 
     // Recompute and update per-day stats in the markdown archive (best-effort)
     try {
-      if (typeof this.archiver.finalizeDailyStats === 'function') {
-        await this.archiver.finalizeDailyStats!(dayjs().format('YYYY-MM-DD'));
+      if (typeof (this.archiver as any).finalizeDailyStats === 'function') {
+        // Update today's archive file since archivedAt is based on run time
+        await (this.archiver as any).finalizeDailyStats(dayjs().format('YYYY-MM-DD'));
       }
     } catch (err) {
-      Logger.error('Failed to update archive statistics (non-fatal).', err as Error);
+      Logger.error('Failed to update archive statistics (non-fatal).', err);
     }
 
-    // End-of-day snapshot: ensure yesterday's playlist
+    // End-of-day snapshot: create a new Spotify playlist for yesterday
+    // based on the archived, chronologically ordered song list.
     try {
       await this.createDailySnapshotPlaylistFromArchive(dayjs().subtract(1, 'day').format('YYYY-MM-DD'));
     } catch (err) {
-      Logger.error('Failed to create daily snapshot Spotify playlist (non-fatal).', err as Error);
+      Logger.error('Failed to create daily snapshot Spotify playlist (non-fatal).', err);
     }
   }
 
@@ -201,7 +245,7 @@ export class WorkflowService {
       try {
         await this.runOnce();
       } catch (err) {
-        Logger.error('Run failed; continuing after delay.', err as Error);
+        Logger.error('Run failed; continuing after delay.', err);
       }
       Logger.info(`Waiting ${intervalSec}s before next run...`);
       await this.waitWithCountdown(intervalSec, 100);
@@ -250,20 +294,32 @@ export class WorkflowService {
   }
 
   private sortKeyForSong(song: ScrapedSong): number {
+    // Try to build an absolute minutes-since-epoch key if playedDate is parsable
     const minutes = this.parsePlayedTimeToMinutes(song.playedTime);
     const d = song.playedDate ? dayjs(song.playedDate) : null;
     if (minutes !== null && d && d.isValid()) {
       const dayStartMs = d.startOf('day').valueOf();
       return Math.floor(dayStartMs / 60000) + minutes;
     }
+    // If only time-of-day is available, use minutes (sort within the same day)
     if (minutes !== null) return minutes;
+    // Fallback to scrapedAt/archivedAt timestamps converted to minutes
     const t = dayjs(song.scrapedAt);
     if (t.isValid()) return Math.floor(t.valueOf() / 60000);
     return Math.floor(Date.now() / 60000);
   }
 
-  private async archiveOutcome(song: ScrapedSong, status: ArchiveEntry['status'], archivedAt: string, match?: TrackMatch | null): Promise<void> {
-    const entry: ArchiveEntry = { song, status, archivedAt };
+  private async archiveOutcome(
+    song: ScrapedSong,
+    status: ArchiveEntry['status'],
+    archivedAt: string,
+    match?: TrackMatch | null
+  ): Promise<void> {
+    const entry: ArchiveEntry = {
+      song,
+      status,
+      archivedAt,
+    };
     if (match) {
       entry.confidence = match.confidence;
       const id = match.track.id;
@@ -274,15 +330,21 @@ export class WorkflowService {
   }
 
   async createDailySnapshotPlaylistFromArchive(date: string): Promise<void> {
+    // Archiver must support extracting track URIs from the archive.
     const archiverAny = this.archiver as any;
     if (typeof archiverAny.getDailySpotifyTrackUris !== 'function') return;
+
     const uris: string[] = await archiverAny.getDailySpotifyTrackUris(date);
     if (!uris || uris.length === 0) return;
+
     const d = dayjs(date);
     const playlistName = d.isValid() ? buildWwozDisplayTitle(d) : `WWOZ ${date}`;
     const pl = await this.enricher.getOrCreatePlaylist(playlistName);
+
+    // Ensure we operate against fresh remote state for the snapshot playlist
     if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(pl.id);
     await this.enricher.loadPlaylistCache(pl.id);
+
     let added = 0;
     for (const uri of uris) {
       const id = uri.replace('spotify:track:', '');
@@ -291,6 +353,7 @@ export class WorkflowService {
       await this.enricher.addToPlaylist(pl.id, uri);
       added++;
     }
+
     Logger.info(`Daily snapshot playlist ensured: ${playlistName}. Tracks added=${added}.`);
   }
 
@@ -301,9 +364,8 @@ export class WorkflowService {
       try {
         await this.createDailySnapshotPlaylistFromArchive(date);
       } catch (err) {
-        Logger.error(`Failed to create snapshot for ${date} (non-fatal).`, err as Error);
+        Logger.error(`Failed to create snapshot for ${date} (non-fatal).`, err);
       }
     }
   }
 }
-
