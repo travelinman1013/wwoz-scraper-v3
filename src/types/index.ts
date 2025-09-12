@@ -63,4 +63,6 @@ export interface IArchiver {
   wasArchived?(entry: ArchiveEntry): Promise<boolean>;
   // Optional: clear in-memory dedup for a new run/session
   clearDedupCache?(): void;
+  // Optional: read a day's archive and return Spotify track URIs in chronological order
+  getDailySpotifyTrackUris?(date: string): Promise<string[]>;
 }

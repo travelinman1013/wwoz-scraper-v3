@@ -26,11 +26,13 @@ export class WorkflowService {
       return;
     }
 
-    // Ensure processing in chronological order (oldest -> newest) based on playedTime
+    // Process in reverse-chronological order (newest -> oldest) so that
+    // continuous mode hits fresh items first and stops after encountering
+    // recent duplicates, enabling quick resume when new tracks appear.
     const songsOrdered = songs.slice().sort((a, b) => {
       const aKey = this.sortKeyForSong(a);
       const bKey = this.sortKeyForSong(b);
-      return aKey - bKey;
+      return bKey - aKey;
     });
 
     // Resolve target playlist
@@ -48,7 +50,11 @@ export class WorkflowService {
     }
 
     // Reset and load a fresh cache to reflect current remote state
-    if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(playlistId);
+    // Clear all cached playlists to avoid any cross-run leakage
+    if (this.enricher.clearPlaylistCache) {
+      Logger.debug('Clearing all in-memory Spotify playlist caches before loading fresh state...');
+      this.enricher.clearPlaylistCache();
+    }
     await this.enricher.loadPlaylistCache(playlistId);
     const initialCount = typeof this.enricher.getCachedTrackCount === 'function'
       ? this.enricher.getCachedTrackCount(playlistId)
@@ -88,15 +94,11 @@ export class WorkflowService {
             archivedAt,
           });
           if (alreadyArchived) {
-            duplicatesInARow++;
+            // Do NOT count archive duplicates toward the stop threshold.
+            // The stop heuristic should be driven by Spotify playlist duplicates only.
             Logger.info(
-              `Archive duplicate encountered: ${song.artist} - ${song.title}. ${duplicatesInARow} dup(s) in a row.`
+              `Archive duplicate encountered (ignored for stop-threshold): ${song.artist} - ${song.title}.`
             );
-            if (duplicatesInARow >= 5) {
-              Logger.info('Reached 5 consecutive duplicates. Stopping early.');
-              stoppedDueToDuplicates = true;
-              break;
-            }
             continue;
           }
         }
@@ -122,7 +124,7 @@ export class WorkflowService {
         if (isDup) {
           duplicatesInARow++;
           Logger.info(
-            `Duplicate in ${playlistName}: ${song.artist} - ${song.title} (track ${match.track.id}). ${duplicatesInARow} dup(s) in a row.`
+            `Spotify duplicate in ${playlistName}: ${song.artist} - ${song.title} (track ${match.track.id}). ${duplicatesInARow} dup(s) in a row.`
           );
           if (duplicatesInARow >= 5) {
             Logger.info('Reached 5 consecutive duplicates. Stopping early.');
@@ -148,7 +150,11 @@ export class WorkflowService {
     // Optionally refresh to compute actual added count from remote
     let remoteAdded = added;
     try {
-      if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(playlistId);
+      // Clear all cached playlists again before recompute to ensure accuracy
+      if (this.enricher.clearPlaylistCache) {
+        Logger.debug('Clearing all in-memory Spotify playlist caches before recomputing final counts...');
+        this.enricher.clearPlaylistCache();
+      }
       await this.enricher.loadPlaylistCache(playlistId);
       const finalCount = typeof this.enricher.getCachedTrackCount === 'function'
         ? this.enricher.getCachedTrackCount(playlistId)
@@ -169,6 +175,14 @@ export class WorkflowService {
       }
     } catch (err) {
       Logger.error('Failed to update archive statistics (non-fatal).', err);
+    }
+
+    // End-of-day snapshot: create a new Spotify playlist for yesterday
+    // based on the archived, chronologically ordered song list.
+    try {
+      await this.createDailySnapshotPlaylistFromArchive(dayjs().subtract(1, 'day').format('YYYY-MM-DD'));
+    } catch (err) {
+      Logger.error('Failed to create daily snapshot Spotify playlist (non-fatal).', err);
     }
   }
 
@@ -262,5 +276,44 @@ export class WorkflowService {
       entry.match = match as unknown;
     }
     await this.archiver.archive(entry);
+  }
+
+  async createDailySnapshotPlaylistFromArchive(date: string): Promise<void> {
+    // Archiver must support extracting track URIs from the archive.
+    const archiverAny = this.archiver as any;
+    if (typeof archiverAny.getDailySpotifyTrackUris !== 'function') return;
+
+    const uris: string[] = await archiverAny.getDailySpotifyTrackUris(date);
+    if (!uris || uris.length === 0) return;
+
+    const playlistName = `WWOZTracker ${date}`;
+    const pl = await this.enricher.getOrCreatePlaylist(playlistName);
+
+    // Ensure we operate against fresh remote state for the snapshot playlist
+    if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(pl.id);
+    await this.enricher.loadPlaylistCache(pl.id);
+
+    let added = 0;
+    for (const uri of uris) {
+      const id = uri.replace('spotify:track:', '');
+      const dup = await this.enricher.isDuplicate(pl.id, id);
+      if (dup) continue;
+      await this.enricher.addToPlaylist(pl.id, uri);
+      added++;
+    }
+
+    Logger.info(`Daily snapshot playlist ensured: ${playlistName}. Tracks added=${added}.`);
+  }
+
+  async backfillDailySnapshots(days: number): Promise<void> {
+    const n = Math.max(1, Math.floor(days));
+    for (let i = 1; i <= n; i++) {
+      const date = dayjs().subtract(i, 'day').format('YYYY-MM-DD');
+      try {
+        await this.createDailySnapshotPlaylistFromArchive(date);
+      } catch (err) {
+        Logger.error(`Failed to create snapshot for ${date} (non-fatal).`, err);
+      }
+    }
   }
 }

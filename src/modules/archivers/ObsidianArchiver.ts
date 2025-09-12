@@ -44,9 +44,13 @@ export class ObsidianArchiver implements IArchiver {
     }
 
     const row = this.formatRow(entry);
-    // Append exactly one newline after the row; avoid leading newline
-    // so we don't create blank lines between rows.
-    await fs.promises.appendFile(filePath, `${row}\n`, 'utf8');
+
+    // Insert the row into the Tracks table in chronological order
+    const updated = await this.insertRowChronologically(filePath, row, this.timeKeyForEntry(entry));
+    if (!updated) {
+      // Fallback: append exactly one newline after the row
+      await fs.promises.appendFile(filePath, `${row}\n`, 'utf8');
+    }
   }
 
   async finalizeDailyStats(date?: string): Promise<void> {
@@ -62,11 +66,13 @@ export class ObsidianArchiver implements IArchiver {
       if (!(await this.exists(filePath))) return;
 
       const original = await fs.promises.readFile(filePath, 'utf8');
+      // Pre-clean any existing stats blocks using a robust literal regex to avoid duplicates
+      const cleaned = original.replace(/<!-- wwoz:stats:start -->[\s\S]*?<!-- wwoz:stats:end -->/g, '').replace(/\n{3,}/g, '\n\n');
 
-      const stats = this.computeStatsFromMarkdown(original);
+      const stats = this.computeStatsFromMarkdown(cleaned);
       const statsBlock = this.renderStatsBlock(stats);
 
-      const updated = this.upsertStatsBlock(original, statsBlock);
+      const updated = this.upsertStatsBlock(cleaned, statsBlock);
       if (updated !== original) {
         await fs.promises.writeFile(filePath, updated, 'utf8');
         Logger.info(
@@ -76,6 +82,22 @@ export class ObsidianArchiver implements IArchiver {
     } catch (err) {
       Logger.error('Failed to finalize daily stats (non-fatal).', err);
     }
+  }
+
+  async getDailySpotifyTrackUris(date: string): Promise<string[]> {
+    const basePath = config.archive.basePath;
+    if (!basePath || basePath.trim().length === 0) return [];
+
+    const day = dayjs(date);
+    if (!day.isValid()) return [];
+
+    const root = this.computeBaseRoot(basePath);
+    const dir = path.join(root, day.format('YYYY'), day.format('MM'));
+    const filePath = path.join(dir, `${day.format('YYYY-MM-DD')}.md`);
+    if (!(await this.exists(filePath))) return [];
+
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    return this.extractSpotifyTrackUrisFromMarkdown(content);
   }
 
   async wasArchived(entry: ArchiveEntry): Promise<boolean> {
@@ -343,6 +365,111 @@ export class ObsidianArchiver implements IArchiver {
 
   // Removed scraped column in favor of Show/Host columns
 
+  private parsePlayedTimeToMinutes(playedTime?: string): number | null {
+    if (!playedTime) return null;
+    const s = playedTime.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+    const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+    if (ampm) {
+      let hh = parseInt(ampm[1], 10);
+      const mm = parseInt(ampm[2], 10);
+      const mer = ampm[3].toLowerCase();
+      if (mer === 'am') {
+        if (hh === 12) hh = 0;
+      } else if (mer === 'pm') {
+        if (hh !== 12) hh += 12;
+      }
+      return hh * 60 + mm;
+    }
+    const h24 = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (h24) {
+      const hh = parseInt(h24[1], 10);
+      const mm = parseInt(h24[2], 10);
+      return hh * 60 + mm;
+    }
+    return null;
+  }
+
+  private timeKeyForEntry(entry: ArchiveEntry): number {
+    // Prefer playedTime; else fall back to scrapedAt/archivedAt converted to minutes-of-day
+    const byPlayed = this.parsePlayedTimeToMinutes(entry.song.playedTime);
+    if (byPlayed !== null) return byPlayed;
+    const ts = dayjs(entry.song.scrapedAt || entry.archivedAt);
+    if (ts.isValid()) return ts.hour() * 60 + ts.minute();
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  private timeKeyForRow(rowLine: string): number {
+    // Row format: | Time | Artist | Title | ... |
+    const parts = rowLine.split('|').map((s) => s.trim());
+    // parts[0] is empty before first pipe; parts[1] should be the Time cell
+    const timeCell = parts[1] || '';
+    const key = this.parsePlayedTimeToMinutes(timeCell);
+    if (key !== null) return key;
+    // Unknown time rows go to the bottom
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  private async insertRowChronologically(filePath: string, newRow: string, newKey: number): Promise<boolean> {
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      const lines = content.split(/\r?\n/);
+
+      // Find the Tracks section
+      let tracksStart = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.toLowerCase().startsWith('## tracks')) {
+          tracksStart = i;
+          break;
+        }
+      }
+      if (tracksStart === -1) return false;
+
+      // Find header rows: titles row and alignment row after the heading
+      // Expect:
+      //   i:    ## Tracks
+      //   i+1:  | Time | Artist | ... |
+      //   i+2:  | :--- | :---   | ... |
+      let headerLine = -1;
+      let alignLine = -1;
+      for (let i = tracksStart + 1; i < Math.min(lines.length, tracksStart + 10); i++) {
+        const t = lines[i].trim();
+        if (t.startsWith('| Time ')) {
+          headerLine = i;
+        } else if (t.startsWith('| :')) {
+          alignLine = i;
+          break;
+        }
+      }
+      if (alignLine === -1) return false;
+
+      // Determine the insertion index by scanning subsequent data rows
+      let insertAt = alignLine + 1; // first data row position
+      for (let i = alignLine + 1; i < lines.length; i++) {
+        const raw = lines[i];
+        const t = raw.trim();
+        if (!(t.startsWith('|') && t.endsWith('|'))) break; // end of table
+        // Skip the titles row defensively if encountered
+        if (i === headerLine) continue;
+        const rowKey = this.timeKeyForRow(raw);
+        if (rowKey > newKey) {
+          insertAt = i;
+          break;
+        }
+        insertAt = i + 1; // if we never break, append after last data row
+      }
+
+      lines.splice(insertAt, 0, newRow);
+      // Ensure single newline at end
+      const updated = lines.join('\n').replace(/\n+$/g, '\n');
+      await fs.promises.writeFile(filePath, updated, 'utf8');
+      return true;
+    } catch (err) {
+      Logger.error('Failed to insert row chronologically; falling back to append.', err);
+      return false;
+    }
+  }
+
   private collectSongKeysFromMarkdown(content: string): Set<string> {
     const lines = content.split(/\r?\n/);
     let inTracks = false;
@@ -371,5 +498,42 @@ export class ObsidianArchiver implements IArchiver {
       }
     }
     return keys;
+  }
+
+  private extractSpotifyTrackUrisFromMarkdown(content: string): string[] {
+    const lines = content.split(/\r?\n/);
+    let inTracks = false;
+    let headerSeen = false;
+    const uris: string[] = [];
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line.startsWith('## ')) {
+        inTracks = line.toLowerCase().startsWith('## tracks');
+        headerSeen = false;
+        continue;
+      }
+      if (!inTracks) continue;
+      if (line.startsWith('| :')) { headerSeen = true; continue; }
+      if (line.startsWith('|') && line.endsWith('|')) {
+        if (!headerSeen) continue; // skip titles row
+        const cells = line
+          .split('|')
+          .map((s) => s.trim())
+          .slice(1, -1);
+        if (cells.length < 9) continue;
+        const spotifyCell = cells[8] || '';
+        const m = spotifyCell.match(/\((https?:\/\/open\.spotify\.com\/track\/([a-zA-Z0-9]+))/);
+        const url = m?.[1];
+        const id = m?.[2];
+        if (id) {
+          uris.push(`spotify:track:${id}`);
+        } else if (url) {
+          // Fallback normalize if pattern changes
+          const idGuess = url.split('/track/')[1]?.split('?')[0]?.trim();
+          if (idGuess) uris.push(`spotify:track:${idGuess}`);
+        }
+      }
+    }
+    return uris;
   }
 }
