@@ -221,11 +221,23 @@ export class WorkflowService {
         let remaining = Math.max(0, Math.floor(totalSeconds));
         while (remaining > 0) {
             const step = Math.min(tickSeconds, remaining);
-            // Race the timeout against a manual trigger event for immediate refresh
-            await Promise.race([
-                new Promise((resolve) => setTimeout(resolve, step * 1000)),
-                new Promise((resolve) => this.immediateEmitter.once('trigger', resolve)),
-            ]);
+            // Race the timeout against a manual trigger event for immediate refresh,
+            // but ensure we always remove the event listener to avoid accumulating
+            // listeners and hitting MaxListenersExceededWarning over long uptimes.
+            await new Promise((resolve) => {
+                let timer = null;
+                const onTrigger = () => {
+                    if (timer)
+                        clearTimeout(timer);
+                    this.immediateEmitter.off('trigger', onTrigger);
+                    resolve();
+                };
+                timer = setTimeout(() => {
+                    this.immediateEmitter.off('trigger', onTrigger);
+                    resolve();
+                }, step * 1000);
+                this.immediateEmitter.on('trigger', onTrigger);
+            });
             if (this.immediateRunRequested) {
                 this.immediateRunRequested = false;
                 Logger.info('Manual refresh requested. Starting new run now...');
