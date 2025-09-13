@@ -7,11 +7,11 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Robust Playwright scraper for WWOZ playlist table (resilient selectors + cleanup)
 - Spotify enrichment with search, scoring, rate‑limited API, playlist ops, and cover upload
 - Duplicate detection against Spotify playlist and Obsidian archive
-- Obsidian Markdown archiver with in‑file dedup and “Daily Statistics” block
+- Obsidian Markdown archiver with in-file dedup and “Daily Statistics” block
 - Chronological row insertion (by played time; timestamp fallback)
-- Continuous mode with safe early‑stop after consecutive Spotify duplicates
+- Continuous mode with safe early-stop after consecutive Spotify duplicates and configurable archive-duplicate streak
 - Daily snapshot Spotify playlist generation from the archive
-- On‑demand CLI for single run, snapshots, and backfill
+- On-demand CLI for single run, snapshots, and backfill
 
 ## Repository Structure
 
@@ -45,7 +45,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Copy or edit `config/config.yaml` (use `CONFIG_PATH` env var to point to your local copy)
 - Key fields:
   - `wwoz.playlistUrl`, `wwoz.scrapeIntervalSeconds`
-  - `archive.basePath`, `archive.deduplicationWindowMinutes`
+  - `archive.basePath`, `archive.deduplicationWindowMinutes`, `archive.consecutiveArchiveDuplicatesStopThreshold`
   - `spotify.userId`, `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`
   - `spotify.staticPlaylistId` (optional; if set, adds to this playlist)
   - `rateLimit.spotify.{maxConcurrent,minTime}`
@@ -84,7 +84,8 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 - Continuous mode
   - Repeats on interval `wwoz.scrapeIntervalSeconds`
   - Stops early after 5 consecutive Spotify duplicates
-  - Early archive‑duplicate detection (does not count toward stop threshold)
+  - Stops early after N consecutive archive duplicates (config: `archive.consecutiveArchiveDuplicatesStopThreshold`, default 50)
+  - Archive duplicates are summarized at the end of each run (totals + max streak); no per-duplicate log spam
   - Skips adding to today’s playlist when a song routes to another day (still archived)
 
 ## Archiving Details
@@ -115,7 +116,7 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
   - If `spotify.staticPlaylistId` is set (or `SPOTIFY_STATIC_PLAYLIST_ID`), adds to that playlist
   - Daily snapshot playlist `WWOZTracker YYYY-MM-DD` is (re)built from the archive for exact chronology
 
- 
+
 
 ## Coding Conventions
 
@@ -126,6 +127,8 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
 
 ## Troubleshooting
 
+- Scraper returns 0 songs
+  - The scraper waits for table rows with real content and retries once with a light reload. If you still see 0, verify `wwoz.playlistUrl` and that the table structure matches expectations. Enable debug logs for more detail.
 - “Playlist cache loaded with N tracks”
   - This reflects the actual remote state after cache reset; it’s expected to equal the number of items in the target Spotify playlist
 - Multiple “Daily Statistics” sections
@@ -144,6 +147,11 @@ A TypeScript (NodeNext ESM) tool that scrapes the WWOZ playlist, enriches result
   - `rateLimit.spotify.maxConcurrent`, `rateLimit.spotify.minTime`
   - `chromePath`
 - Env override: `SPOTIFY_STATIC_PLAYLIST_ID` supersedes `spotify.staticPlaylistId`
+
+## Logging
+
+- Default logs surface high‑level actions and outcomes. Archive duplicates are only summarized at end of run.
+- To enable detailed debug logs (including archive scans/duplicate hits), set `LOG_LEVEL=debug` or `DEBUG=1` when starting the app.
 
 ## Types (Key)
 

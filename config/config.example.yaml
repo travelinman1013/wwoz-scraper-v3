@@ -12,6 +12,10 @@ archive:
   enabled: true
   basePath: '/path/to/your/Obsidian/Vault/WWOZ'
   deduplicationWindowMinutes: 60
+  # Stop processing a run if we hit this many
+  # consecutive archive duplicates (helps avoid log spam
+  # when scraping historic rows). Defaults to 50 when unset.
+  consecutiveArchiveDuplicatesStopThreshold: 50
 rateLimit:
   spotify:
     maxConcurrent: 2

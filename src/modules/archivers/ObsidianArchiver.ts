@@ -44,7 +44,7 @@ export class ObsidianArchiver implements IArchiver {
       const keys = this.collectSongKeysFromMarkdown(content);
       const key = this.buildSongKey(entry);
       if (keys.has(key)) {
-        Logger.info(`Archive skip (already present in ${filePath}): ${entry.song.artist} - ${entry.song.title}`);
+        Logger.debug(`Archive skip (already present in ${filePath}): ${entry.song.artist} - ${entry.song.title}`);
         return;
       }
     } catch {
@@ -54,7 +54,7 @@ export class ObsidianArchiver implements IArchiver {
 
     // In-memory dedup to avoid rapid duplicates
     if (this.isRecentDuplicate(entry)) {
-      Logger.info(`Archive dedup: skipping ${entry.song.artist} - ${entry.song.title}`);
+      Logger.debug(`Archive dedup: skipping ${entry.song.artist} - ${entry.song.title}`);
       return;
     }
 
@@ -129,7 +129,7 @@ export class ObsidianArchiver implements IArchiver {
       const key = this.buildSongKey(entry);
       const hit = keys.has(key);
       if (hit) {
-        Logger.info(
+        Logger.debug(
           `Archive duplicate: already present in ${filePath} -> ${entry.song.artist || '-'} - ${entry.song.title || '-'}`
         );
       }

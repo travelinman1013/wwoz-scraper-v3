@@ -20,6 +20,29 @@ program
     const archiver = new ObsidianArchiver();
     const workflow = new WorkflowService(scraper, enricher, archiver);
 
+    // Keybinding: Up Arrow triggers immediate refresh in continuous mode
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', (key: string) => {
+          // Ctrl+C exits
+          if (key === '\u0003') {
+            Logger.info('Exiting on Ctrl+C');
+            process.exit();
+          }
+          // Up Arrow sequence
+          if (key === '\u001b[A') {
+            Logger.info('Manual refresh requested (Up Arrow).');
+            workflow.requestImmediateRun();
+          }
+        });
+      }
+    } catch {
+      // Non-TTY environments may throw; ignore safely
+    }
+
     if (options.snapshot) {
       const date = String(options.snapshot);
       Logger.info(`Creating daily snapshot playlist for ${date}...`);

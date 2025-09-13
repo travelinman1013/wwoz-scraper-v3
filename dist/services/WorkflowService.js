@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { EventEmitter } from 'events';
 import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
@@ -8,6 +9,8 @@ export class WorkflowService {
     enricher;
     archiver;
     showGuesser;
+    immediateRunRequested = false;
+    immediateEmitter = new EventEmitter();
     constructor(scraper, enricher, archiver) {
         this.scraper = scraper;
         this.enricher = enricher;
@@ -55,6 +58,10 @@ export class WorkflowService {
         const pendingAdds = [];
         let duplicatesInARow = 0;
         let stoppedDueToDuplicates = false;
+        let archiveDuplicatesInARow = 0;
+        let archiveDuplicatesTotal = 0;
+        let archiveDuplicatesMaxStreak = 0;
+        // We still track archive duplicate stats but no longer stop early.
         for (const song of songsOrdered) {
             processed++;
             const archivedAt = new Date().toISOString();
@@ -79,8 +86,13 @@ export class WorkflowService {
                         archivedAt,
                     });
                     if (alreadyArchived) {
-                        // Do NOT count archive duplicates toward the stop threshold.
-                        Logger.info(`Archive duplicate encountered (ignored for stop-threshold): ${song.artist} - ${song.title}.`);
+                        archiveDuplicatesInARow++;
+                        archiveDuplicatesTotal++;
+                        if (archiveDuplicatesInARow > archiveDuplicatesMaxStreak) {
+                            archiveDuplicatesMaxStreak = archiveDuplicatesInARow;
+                        }
+                        // Do not log each archive duplicate to keep logs concise; summarized at end of run.
+                        // Do not process further for archive duplicates
                         continue;
                     }
                 }
@@ -88,6 +100,7 @@ export class WorkflowService {
                 if (!match) {
                     // Not found (or below confidence threshold)
                     duplicatesInARow = 0;
+                    archiveDuplicatesInARow = 0; // reset archive-dup streak on any non-dup outcome
                     Logger.info(`No Spotify match: archiving as NOT FOUND (day=${songDay}).`);
                     await this.archiveOutcome(song, 'not_found', archivedAt);
                     continue;
@@ -96,6 +109,7 @@ export class WorkflowService {
                 const isDup = await this.enricher.isDuplicate(playlistId, match.track.id);
                 if (isDup) {
                     duplicatesInARow++;
+                    archiveDuplicatesInARow = 0; // reset archive-dup streak on spotify-dup
                     await this.archiveOutcome(song, 'found', archivedAt, match);
                     if (duplicatesInARow >= 5) {
                         Logger.info('Encountered 5 consecutive Spotify duplicates; stopping early.');
@@ -106,6 +120,7 @@ export class WorkflowService {
                 }
                 // New addition: archive first, then queue for playlist add
                 duplicatesInARow = 0;
+                archiveDuplicatesInARow = 0; // reset archive-dup streak on new addition
                 await this.archiveOutcome(song, 'found', archivedAt, match);
                 const minutes = this.parsePlayedTimeToMinutes(song.playedTime);
                 const timeKey = minutes !== null
@@ -159,8 +174,11 @@ export class WorkflowService {
         catch {
             // ignore; fall back to local counter
         }
-        const stopNote = stoppedDueToDuplicates ? ' (stopped after 5 consecutive duplicates)' : '';
+        const stopNote = stoppedDueToDuplicates
+            ? ' (stopped after 5 consecutive Spotify duplicates)'
+            : '';
         Logger.info(`Workflow run finished. Processed=${processed}, Added=${remoteAdded}.${stopNote}`);
+        Logger.info(`Archive duplicate check: total=${archiveDuplicatesTotal}, maxStreak=${archiveDuplicatesMaxStreak}`);
         // Recompute and update per-day stats in the markdown archive (best-effort)
         try {
             if (typeof this.archiver.finalizeDailyStats === 'function') {
@@ -194,10 +212,25 @@ export class WorkflowService {
         }
     }
     async waitWithCountdown(totalSeconds, tickSeconds = 100) {
+        // If a manual refresh was requested already, skip waiting entirely.
+        if (this.immediateRunRequested) {
+            this.immediateRunRequested = false;
+            Logger.info('Manual refresh requested. Starting new run now...');
+            return;
+        }
         let remaining = Math.max(0, Math.floor(totalSeconds));
         while (remaining > 0) {
             const step = Math.min(tickSeconds, remaining);
-            await new Promise((resolve) => setTimeout(resolve, step * 1000));
+            // Race the timeout against a manual trigger event for immediate refresh
+            await Promise.race([
+                new Promise((resolve) => setTimeout(resolve, step * 1000)),
+                new Promise((resolve) => this.immediateEmitter.once('trigger', resolve)),
+            ]);
+            if (this.immediateRunRequested) {
+                this.immediateRunRequested = false;
+                Logger.info('Manual refresh requested. Starting new run now...');
+                return;
+            }
             remaining -= step;
             if (remaining > 0) {
                 Logger.info(`Next refresh in ${remaining} seconds`);
@@ -259,6 +292,12 @@ export class WorkflowService {
             entry.match = match;
         }
         await this.archiver.archive(entry);
+    }
+    // Public API: allow external callers (e.g., CLI key handler) to request an immediate run.
+    requestImmediateRun() {
+        this.immediateRunRequested = true;
+        // Wake any pending wait so the next run can start immediately.
+        this.immediateEmitter.emit('trigger');
     }
     async createDailySnapshotPlaylistFromArchive(date) {
         const archiverAny = this.archiver;

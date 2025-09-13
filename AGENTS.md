@@ -23,7 +23,7 @@
 - Use `Logger` for info/warn/error/debug.
 
 ## Modules (Implemented)
-- Scraper: `WWOZScraper` (Playwright) parses playlist rows (robust selectors + cleanup).
+- Scraper: `WWOZScraper` (Playwright) parses playlist rows (robust selectors + cleanup). Avoids `networkidle`; waits for table content; single reload fallback.
 - Enricher: `SpotifyEnricher` handles search, scoring, rate-limited API, playlist ops, cover upload.
 - Archiver: `ObsidianArchiver` writes daily Markdown, dedups, keeps rows chronologically, updates stats.
 - Workflow: `WorkflowService` orchestrates scrape → enrich → archive/playlist; snapshots and stats.
@@ -61,7 +61,7 @@
 - Loads fresh Spotify playlist cache at start; refreshes before/after adds for accurate counts.
 - Buffers playlist additions and applies them in chronological order (to match archive).
 - Stops early after 5 consecutive Spotify duplicates (normal pause in continuous mode).
-- Early archive-duplicate detection (does not count toward stop threshold).
+- Stops early after N consecutive archive duplicates (config: `archive.consecutiveArchiveDuplicatesStopThreshold`, default 50). No per-duplicate logging; end-of-run summarizes totals/streak.
 - Skips adding to today’s playlist when a song is routed to another day; still archives it.
 - End of run: updates today’s archive stats and ensures yesterday’s daily snapshot playlist.
 
@@ -69,11 +69,14 @@
 - Do not commit real secrets; prefer local YAML via `CONFIG_PATH`.
 - Key config fields:
   - `wwoz.playlistUrl`, `wwoz.scrapeIntervalSeconds`
-  - `archive.basePath`, `archive.deduplicationWindowMinutes`
+  - `archive.basePath`, `archive.deduplicationWindowMinutes`, `archive.consecutiveArchiveDuplicatesStopThreshold`
   - `spotify.clientId`, `spotify.clientSecret`, `spotify.refreshToken`, `spotify.userId`, `spotify.staticPlaylistId`
   - `rateLimit.spotify.maxConcurrent`, `rateLimit.spotify.minTime`
   - `chromePath` (or install Playwright browsers)
 - Env override: `SPOTIFY_STATIC_PLAYLIST_ID` supersedes `spotify.staticPlaylistId`.
+
+## Logging
+- Default level hides debug noise. Set `LOG_LEVEL=debug` (or `DEBUG=1`) to include debug lines (e.g., archive scans/duplicates).
 
 ## Next Steps (Planned)
 - Optional: persist archive dedup keys across runs.

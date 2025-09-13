@@ -21,6 +21,11 @@ export class Logger {
   }
 
   static debug(message: string): void {
+    // Only emit debug logs when LOG_LEVEL=debug or DEBUG is truthy
+    const ll = (process.env.LOG_LEVEL || '').toLowerCase();
+    const dbg = (process.env.DEBUG || '').toLowerCase();
+    const debugEnabled = ll === 'debug' || dbg === '1' || dbg === 'true' || dbg === 'yes' || dbg === 'on';
+    if (!debugEnabled) return;
     // Print debug without the noisy [DEBUG] label
     console.debug(`${timestamp()} ${message}`);
   }

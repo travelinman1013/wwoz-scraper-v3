@@ -27,8 +27,8 @@ export class WWOZScraper {
             const page = await context.newPage();
             Logger.info('Navigating to page...');
             await page.goto(config.wwoz.playlistUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            // Ensure XHR-driven content loads
-            await page.waitForLoadState('networkidle', { timeout: 30000 });
+            // Avoid relying on 'networkidle' — WWOZ page can long-poll. We'll wait for table rows instead.
+            // If 'networkidle' ever becomes reliable again, we can reinstate it as a soft wait.
             const rowSelectors = [
                 '.playlists table.table-striped.table-condensed tbody tr',
                 'table.table-striped.table-condensed tbody tr',
@@ -53,8 +53,26 @@ export class WWOZScraper {
                 activeSelector = 'table tbody tr';
                 await page.waitForSelector(activeSelector, { state: 'visible', timeout: 15000 });
             }
+            // Wait until at least one row appears to contain a plausible time and some content
+            try {
+                await page.waitForFunction((sel) => {
+                    const rows = Array.from(document.querySelectorAll(sel));
+                    const timeRe = /^\d{1,2}:\d{2}(?:\s*[AaPp]\.?[Mm]\.?)?$/;
+                    return rows.some((row) => {
+                        const texts = Array.from(row.querySelectorAll('td'))
+                            .map((c) => (c.textContent || '').trim())
+                            .filter(Boolean);
+                        const hasTime = texts.some((t) => timeRe.test(t));
+                        const hasContent = texts.some((t) => t !== '-' && t.length > 1);
+                        return hasTime && hasContent;
+                    });
+                }, activeSelector, { timeout: 30000 });
+            }
+            catch {
+                // continue; extraction below will fall back to retry/reload
+            }
             Logger.info('Extracting rows from playlist table...');
-            const rawRows = await page.$$eval(activeSelector, (rows) => {
+            let rawRows = await page.$$eval(activeSelector, (rows) => {
                 // Map rows to structured data using explicit data-bind attributes when present.
                 return rows.map((row) => {
                     const get = (sel) => (row.querySelector(sel)?.textContent || '').trim();
@@ -67,7 +85,7 @@ export class WWOZScraper {
                         // Fallback heuristics when explicit bindings are missing.
                         const cells = Array.from(row.querySelectorAll('td'));
                         const texts = cells.map((c) => (c.textContent || '').trim());
-                        const timeRe = /^(\d{1,2}):(\d{2})(?:\s*[aApP]\.?(?:m\.?){1})?$/; // matches 3:05 PM, 3:05pm, 15:05
+                        const timeRe = /^\d{1,2}:\d{2}(?:\s*[AaPp]\.?[Mm]\.?)?$/; // matches 3:05 PM, 3:05pm, 15:05
                         // Common table layout: [Time, Artist, Title, Album]
                         if (texts.length >= 4 && timeRe.test(texts[0])) {
                             time = texts[0];
@@ -103,6 +121,46 @@ export class WWOZScraper {
                     return { artist, title, album, date, time };
                 });
             });
+            // If no rows were captured (site slow or dynamic), try one light reload once.
+            if (!rawRows || rawRows.length === 0) {
+                try {
+                    Logger.warn('No rows detected; retrying once after reload...');
+                    await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+                    await page.waitForSelector(activeSelector, { state: 'visible', timeout: 15000 });
+                    try {
+                        await page.waitForFunction((sel) => {
+                            const rows = Array.from(document.querySelectorAll(sel));
+                            const timeRe = /^\d{1,2}:\d{2}(?:\s*[AaPp]\.?[Mm]\.?)?$/;
+                            return rows.some((row) => {
+                                const texts = Array.from(row.querySelectorAll('td'))
+                                    .map((c) => (c.textContent || '').trim())
+                                    .filter(Boolean);
+                                const hasTime = texts.some((t) => timeRe.test(t));
+                                const hasContent = texts.some((t) => t !== '-' && t.length > 1);
+                                return hasTime && hasContent;
+                            });
+                        }, activeSelector, { timeout: 20000 });
+                    }
+                    catch {
+                        // ignore; proceed to evaluate
+                    }
+                    rawRows = await page.$$eval(activeSelector, (rows) => {
+                        return rows.map((row) => {
+                            const get = (sel) => (row.querySelector(sel)?.textContent || '').trim();
+                            return {
+                                artist: get('td[data-bind="artist"]'),
+                                title: get('td[data-bind="title"]'),
+                                album: get('td[data-bind="album"]'),
+                                date: get('td[data-bind="date"]'),
+                                time: get('td[data-bind="time"]'),
+                            };
+                        });
+                    });
+                }
+                catch {
+                    // proceed; will result in empty songs and handled by caller
+                }
+            }
             const nowIso = new Date().toISOString();
             const songs = rawRows
                 .map((r) => ({

@@ -19,6 +19,8 @@ export interface ArchiveConfig {
   enabled: boolean;
   basePath: string;
   deduplicationWindowMinutes: number;
+  // Optional: stop a run if too many archive duplicates in a row
+  consecutiveArchiveDuplicatesStopThreshold?: number;
 }
 
 export interface RateLimitBucketConfig {
