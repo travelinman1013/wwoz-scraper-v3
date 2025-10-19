@@ -9,6 +9,12 @@ import { resolveSongDay, buildWwozDisplayTitle } from '../../utils/date.js';
 
 export class ObsidianArchiver implements IArchiver {
   private recentKeys: Map<string, number> = new Map(); // key -> lastWrittenEpochMs
+  private currentArchiveDay: string | null = null; // YYYY-MM-DD format
+  private onDayChange?: (previousDayArchivePath: string) => void;
+
+  constructor(onDayChange?: (previousDayArchivePath: string) => void) {
+    this.onDayChange = onDayChange;
+  }
 
   clearDedupCache(): void {
     this.recentKeys.clear();
@@ -25,6 +31,23 @@ export class ObsidianArchiver implements IArchiver {
     const fileDate = this.resolveDate(entry);
     const root = this.computeBaseRoot(basePath);
     const { dir, filePath } = await this.getDailyFilePath(root, fileDate);
+
+    // Detect day change and trigger callback if configured
+    const dayString = fileDate.format('YYYY-MM-DD');
+    if (this.currentArchiveDay !== null && this.currentArchiveDay !== dayString) {
+      // Day has changed; calculate previous day's archive path
+      const previousDay = dayjs(this.currentArchiveDay);
+      if (previousDay.isValid() && this.onDayChange) {
+        const { filePath: previousFilePath } = await this.getDailyFilePath(root, previousDay);
+        Logger.debug(`Day change detected: ${this.currentArchiveDay} -> ${dayString}`);
+        this.onDayChange(previousFilePath);
+      }
+    }
+    // Update current day tracker
+    if (this.currentArchiveDay === null) {
+      Logger.debug(`Archive day initialized: ${dayString}`);
+    }
+    this.currentArchiveDay = dayString;
 
     await fs.promises.mkdir(dir, { recursive: true });
 

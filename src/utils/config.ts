@@ -23,6 +23,17 @@ export interface ArchiveConfig {
   consecutiveArchiveDuplicatesStopThreshold?: number;
 }
 
+export interface ArtistDiscoveryConfig {
+  enabled: boolean;
+  scriptPath: string;
+  pythonPath: string;
+  perplexityApiKey: string;
+  cardsDir?: string;
+  imagesDir?: string;
+  forceReprocess: boolean;
+  timeoutMinutes?: number;
+}
+
 export interface RateLimitBucketConfig {
   maxConcurrent: number;
   minTime: number;
@@ -41,6 +52,7 @@ export interface AppConfig {
   archive: ArchiveConfig;
   rateLimit: RateLimitConfig;
   chromePath: string | null;
+  artistDiscovery?: ArtistDiscoveryConfig;
 }
 
 function resolveConfigPath(): string {
@@ -76,6 +88,22 @@ export function loadConfig(filePath?: string): AppConfig {
     throw new Error('Invalid configuration: spotify credentials are required.');
   }
   // image selector removed — no image/cover config required
+
+  // Validate artist discovery config if enabled
+  if (cfg.artistDiscovery?.enabled) {
+    if (!cfg.artistDiscovery.scriptPath || typeof cfg.artistDiscovery.scriptPath !== 'string') {
+      throw new Error('Invalid configuration: artistDiscovery.scriptPath is required when enabled.');
+    }
+    if (!fs.existsSync(cfg.artistDiscovery.scriptPath)) {
+      throw new Error(`Artist discovery script not found at: ${cfg.artistDiscovery.scriptPath}`);
+    }
+    if (!cfg.artistDiscovery.perplexityApiKey || typeof cfg.artistDiscovery.perplexityApiKey !== 'string') {
+      throw new Error('Invalid configuration: artistDiscovery.perplexityApiKey is required when enabled.');
+    }
+    if (!cfg.artistDiscovery.pythonPath || typeof cfg.artistDiscovery.pythonPath !== 'string') {
+      throw new Error('Invalid configuration: artistDiscovery.pythonPath is required when enabled.');
+    }
+  }
 
   // Environment overrides (non-secret convenience)
   const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;

@@ -11,12 +11,19 @@ program
     .option('--once', 'Run the scraper a single time and exit')
     .option('--snapshot <date>', 'Create a daily snapshot playlist for YYYY-MM-DD and exit')
     .option('--backfill <days>', 'Create daily snapshot playlists for the past <days> days and exit', (v) => parseInt(v, 10))
+    .option('--backfill-artists <days>', 'Run artist discovery pipeline for the past <days> days and exit', (v) => parseInt(v, 10))
     // cover/image-selection functionality removed
     .action(async (options) => {
     const scraper = new WWOZScraper();
     const enricher = new SpotifyEnricher();
-    const archiver = new ObsidianArchiver();
-    const workflow = new WorkflowService(scraper, enricher, archiver);
+    // Create workflow service first (it will initialize artist discovery)
+    const workflow = new WorkflowService(scraper, enricher, null); // temporary null
+    // Create archiver with day-change callback that sets pending archive in workflow
+    const archiver = new ObsidianArchiver((previousDayArchivePath) => {
+        workflow.setPendingArchive(previousDayArchivePath);
+    });
+    // Now set the archiver on workflow
+    workflow.setArchiver(archiver);
     // Keybinding: Up Arrow triggers immediate refresh in continuous mode
     try {
         if (process.stdin.isTTY) {
@@ -50,6 +57,12 @@ program
         const days = Math.max(1, options.backfill);
         Logger.info(`Backfilling daily snapshot playlists for past ${days} day(s)...`);
         await workflow.backfillDailySnapshots(days);
+        return;
+    }
+    if (typeof options.backfillArtists === 'number' && !Number.isNaN(options.backfillArtists)) {
+        const days = Math.max(1, options.backfillArtists);
+        Logger.info(`Backfilling artist discovery for past ${days} day(s)...`);
+        await workflow.backfillArtistDiscovery(days);
         return;
     }
     // image cover update and indexing commands removed

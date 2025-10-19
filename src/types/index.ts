@@ -67,3 +67,16 @@ export interface IArchiver {
   // Optional: read a day's archive and return Spotify track URIs in chronological order
   getDailySpotifyTrackUris?(date: string): Promise<string[]>;
 }
+
+// Artist Discovery Pipeline state tracking
+export interface ProcessedArchiveState {
+  processedAt: string; // ISO timestamp
+  status: 'success' | 'error';
+  error?: string;
+  artistsProcessed?: number;
+  durationMs?: number;
+}
+
+export interface ProcessedArchivesDB {
+  [archiveDate: string]: ProcessedArchiveState; // Key: YYYY-MM-DD
+}

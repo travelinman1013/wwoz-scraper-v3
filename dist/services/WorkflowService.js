@@ -1,14 +1,19 @@
+import fs from 'fs';
+import path from 'path';
 import dayjs from 'dayjs';
 import { EventEmitter } from 'events';
 import { Logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
 import { resolveSongDayString, buildWwozDisplayTitle } from '../utils/date.js';
+import { ArtistDiscoveryService } from './ArtistDiscoveryService.js';
 export class WorkflowService {
     scraper;
     enricher;
     archiver;
     showGuesser;
+    artistDiscoveryService = null;
+    pendingArchivePath = null;
     immediateRunRequested = false;
     immediateEmitter = new EventEmitter();
     constructor(scraper, enricher, archiver) {
@@ -16,6 +21,11 @@ export class WorkflowService {
         this.enricher = enricher;
         this.archiver = archiver;
         this.showGuesser = new ShowGuesser();
+        // Initialize artist discovery if enabled
+        if (config.artistDiscovery?.enabled) {
+            this.artistDiscoveryService = new ArtistDiscoveryService();
+            Logger.info('Artist Discovery Service initialized.');
+        }
     }
     async runOnce() {
         Logger.info(`Workflow run started. dryRun=${config.dryRun}. Scraping playlist...`);
@@ -207,6 +217,15 @@ export class WorkflowService {
             catch (err) {
                 Logger.error('Run failed; continuing after delay.', err);
             }
+            // Process pending archive from day change (if any) before waiting
+            if (this.pendingArchivePath && this.artistDiscoveryService) {
+                const archivePath = this.pendingArchivePath;
+                this.pendingArchivePath = null;
+                // Fire and forget: run artist discovery in background
+                this.artistDiscoveryService.processArchive(archivePath).catch((err) => {
+                    Logger.error(`Artist discovery failed for ${archivePath}:`, err);
+                });
+            }
             Logger.info(`Waiting ${intervalSec}s before next run...`);
             await this.waitWithCountdown(intervalSec, 100);
         }
@@ -311,6 +330,15 @@ export class WorkflowService {
         // Wake any pending wait so the next run can start immediately.
         this.immediateEmitter.emit('trigger');
     }
+    // Public API: set the archiver after construction (for circular dependency resolution)
+    setArchiver(archiver) {
+        this.archiver = archiver;
+    }
+    // Public API: set pending archive path from day-change callback
+    setPendingArchive(archivePath) {
+        this.pendingArchivePath = archivePath;
+        Logger.debug(`Pending archive set for artist discovery: ${archivePath}`);
+    }
     async createDailySnapshotPlaylistFromArchive(date) {
         const archiverAny = this.archiver;
         if (typeof archiverAny.getDailySpotifyTrackUris !== 'function')
@@ -345,6 +373,77 @@ export class WorkflowService {
             catch (err) {
                 Logger.error(`Failed to create snapshot for ${date} (non-fatal).`, err);
             }
+        }
+    }
+    async backfillArtistDiscovery(days) {
+        if (!this.artistDiscoveryService) {
+            Logger.warn('Artist Discovery is not enabled; cannot backfill.');
+            return;
+        }
+        const n = Math.max(1, Math.floor(days));
+        Logger.info(`Starting artist discovery backfill for past ${n} day(s)...`);
+        const basePath = config.archive.basePath;
+        if (!basePath || basePath.trim().length === 0) {
+            Logger.error('archive.basePath is not configured; cannot backfill.');
+            return;
+        }
+        // Use ObsidianArchiver's path resolution logic
+        const archiverAny = this.archiver;
+        if (typeof archiverAny.getDailyFilePath !== 'function') {
+            Logger.error('Archiver does not support getDailyFilePath; cannot backfill.');
+            return;
+        }
+        let processed = 0;
+        let skipped = 0;
+        let errors = 0;
+        for (let i = 1; i <= n; i++) {
+            const date = dayjs().subtract(i, 'day');
+            const dateStr = date.format('YYYY-MM-DD');
+            try {
+                // Compute base root (strip year/month from path if present)
+                const root = this.computeBaseRoot(basePath);
+                const { filePath } = await archiverAny.getDailyFilePath(root, date);
+                // Check if archive file exists
+                if (!await this.fileExists(filePath)) {
+                    Logger.debug(`Archive file not found for ${dateStr}; skipping.`);
+                    skipped++;
+                    continue;
+                }
+                Logger.info(`Processing artist discovery for ${dateStr}...`);
+                await this.artistDiscoveryService.processArchive(filePath);
+                processed++;
+            }
+            catch (err) {
+                Logger.error(`Failed to process artist discovery for ${dateStr} (non-fatal).`, err);
+                errors++;
+            }
+        }
+        Logger.info(`Artist discovery backfill completed: processed=${processed}, skipped=${skipped}, errors=${errors}`);
+    }
+    computeBaseRoot(input) {
+        const norm = path.resolve(input);
+        const parts = norm.split(path.sep).filter(Boolean);
+        if (parts.length === 0)
+            return norm;
+        const last = parts[parts.length - 1];
+        const prev = parts[parts.length - 2];
+        const isYear = (s) => !!s && /^\d{4}$/.test(s);
+        const isMonth = (s) => !!s && /^(0[1-9]|1[0-2])$/.test(s);
+        if (isYear(prev) && isMonth(last)) {
+            return path.sep + parts.slice(0, -2).join(path.sep);
+        }
+        if (isYear(last)) {
+            return path.sep + parts.slice(0, -1).join(path.sep);
+        }
+        return norm;
+    }
+    async fileExists(filePath) {
+        try {
+            await fs.promises.access(filePath, fs.constants.F_OK);
+            return true;
+        }
+        catch {
+            return false;
         }
     }
 }

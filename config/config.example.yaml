@@ -22,6 +22,19 @@ rateLimit:
     minTime: 200
 chromePath: null
 
+# Artist Discovery Pipeline
+# Automatically processes completed daily archives to create/enhance artist cards
+artistDiscovery:
+  enabled: false  # Set to true to enable
+  scriptPath: '/Users/maxwell/LETSGO/Projects/image_agent_v5/artist_discovery_pipeline.py'
+  pythonPath: 'python3'  # or full path to Python executable
+  perplexityApiKey: 'YOUR_PERPLEXITY_API_KEY'
+  # Optional: Override default paths used by the Python script
+  # cardsDir: '/Users/maxwell/LETSGO/MaxVault/01_Projects/PersonalArtistWiki/Artists'
+  # imagesDir: '/Users/maxwell/LETSGO/MaxVault/03_Resources/source_material/ArtistPortraits'
+  forceReprocess: false  # Set to true to reprocess already-completed archives
+  timeoutMinutes: 30  # Maximum time for script execution
+
 # NOTE:
 # - Copy this file to a safe location and customize values.
 # - Set CONFIG_PATH to point to your private YAML:

@@ -48,7 +48,13 @@ export class SpotifyEnricher {
                     lastErr = err;
                     const status = err?.statusCode || err?.status || err?.body?.error?.status;
                     const retryAfter = Number(err?.headers?.['retry-after']) || 0;
-                    const isRetryable = status === 429 || (status >= 500 && status < 600);
+                    // Treat common transient network errors as retryable, in addition to 429/5xx
+                    const code = (err?.code || '').toString();
+                    const message = (err?.message || '').toString();
+                    const transientCodes = new Set(['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED']);
+                    const looksLikeTimeout = code === 'ETIMEDOUT' || /timeout|timed out|ETIMEDOUT/i.test(message);
+                    const isRetryable = (status === 429 || (status >= 500 && status < 600) ||
+                        transientCodes.has(code) || looksLikeTimeout);
                     const backoffMs = retryAfter > 0 ? retryAfter * 1000 : 500 * Math.pow(2, i);
                     if (isRetryable && i < attempts - 1) {
                         Logger.warn(`Spotify API ${label ?? ''} failed (status ${status}). Retrying in ${backoffMs}ms...`);
@@ -145,7 +151,7 @@ export class SpotifyEnricher {
             return existing;
         }
         Logger.info(`Creating playlist: ${name}`);
-        const res = await this.schedule(() => this.spotify.createPlaylist(name, { public: false }), 'createPlaylist');
+        const res = await this.schedule(() => this.spotify.createPlaylist(name, { public: false }), 'createPlaylist', 5);
         const pl = res.body;
         return { id: pl.id, name: pl.name };
     }
