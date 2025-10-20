@@ -29,19 +29,41 @@ export class SpotifyEnricher implements IEnricher {
   private async ensureAccessToken(): Promise<void> {
     const now = Date.now();
     if (this.accessTokenExpiresAt && now < this.accessTokenExpiresAt - 60_000) {
+      const remainingMs = this.accessTokenExpiresAt - now;
+      const remainingMin = Math.floor(remainingMs / 60000);
+      Logger.debug(`Spotify access token still valid (expires in ${remainingMin} minutes).`);
       return; // still valid
     }
-    try {
-      const data = await this.spotify.refreshAccessToken();
-      const token = data.body.access_token;
-      const expiresInSec = data.body.expires_in ?? 3600;
-      this.spotify.setAccessToken(token);
-      this.accessTokenExpiresAt = Date.now() + expiresInSec * 1000;
-      Logger.debug('Spotify access token refreshed.');
-    } catch (err) {
-      Logger.error('Failed to refresh Spotify access token.', err);
-      throw err;
+
+    // Retry logic for token refresh to handle transient network/API failures
+    const maxAttempts = 3;
+    let lastErr: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        Logger.debug(`Refreshing Spotify access token (attempt ${attempt}/${maxAttempts})...`);
+        const data = await this.spotify.refreshAccessToken();
+        const token = data.body.access_token;
+        const expiresInSec = data.body.expires_in ?? 3600;
+        this.spotify.setAccessToken(token);
+        this.accessTokenExpiresAt = Date.now() + expiresInSec * 1000;
+        const expiresInMin = Math.floor(expiresInSec / 60);
+        Logger.debug(`Spotify access token refreshed successfully (expires in ${expiresInMin} minutes).`);
+        return; // success
+      } catch (err) {
+        lastErr = err;
+
+        if (attempt < maxAttempts) {
+          const backoffMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+          Logger.warn(`Failed to refresh Spotify access token (attempt ${attempt}/${maxAttempts}). Retrying in ${backoffMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      }
     }
+
+    // All attempts failed
+    Logger.error('Failed to refresh Spotify access token after all retry attempts.', lastErr);
+    throw lastErr;
   }
 
   private async schedule<T>(fn: ApiCall<T>, label?: string, attempts = 3): Promise<T> {

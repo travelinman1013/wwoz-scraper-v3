@@ -16,7 +16,43 @@ export class Logger {
   }
 
   static error(message: string, err?: unknown): void {
-    const detail = err instanceof Error ? `\n${err.name}: ${err.message}\n${err.stack ?? ''}` : '';
+    let detail = '';
+    if (err instanceof Error) {
+      detail = `\n${err.name}: ${err.message}`;
+
+      // Handle WebapiError from spotify-web-api-node
+      const webapiErr = err as any;
+      if (webapiErr.statusCode !== undefined) {
+        detail += `\nHTTP Status: ${webapiErr.statusCode}`;
+      }
+      if (webapiErr.body) {
+        try {
+          const bodyStr = typeof webapiErr.body === 'string'
+            ? webapiErr.body
+            : JSON.stringify(webapiErr.body, null, 2);
+          detail += `\nResponse Body: ${bodyStr}`;
+        } catch {
+          detail += `\nResponse Body: ${String(webapiErr.body)}`;
+        }
+      }
+      if (webapiErr.headers) {
+        try {
+          detail += `\nResponse Headers: ${JSON.stringify(webapiErr.headers, null, 2)}`;
+        } catch {
+          // Skip headers if they can't be stringified
+        }
+      }
+
+      if (err.stack) {
+        detail += `\n${err.stack}`;
+      }
+    } else if (err) {
+      try {
+        detail = `\n${JSON.stringify(err, null, 2)}`;
+      } catch {
+        detail = `\n${String(err)}`;
+      }
+    }
     console.error(`${timestamp()} ${chalk.red('[ERROR]')} ${message}${detail}`);
   }
 
