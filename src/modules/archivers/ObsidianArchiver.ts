@@ -39,8 +39,11 @@ export class ObsidianArchiver implements IArchiver {
       const previousDay = dayjs(this.currentArchiveDay);
       if (previousDay.isValid() && this.onDayChange) {
         const { filePath: previousFilePath } = await this.getDailyFilePath(root, previousDay);
-        Logger.debug(`Day change detected: ${this.currentArchiveDay} -> ${dayString}`);
+        Logger.info(`[Day Change] Detected: ${this.currentArchiveDay} -> ${dayString}`);
+        Logger.info(`[Day Change] Queueing previous day archive for processing: ${previousFilePath}`);
         this.onDayChange(previousFilePath);
+      } else {
+        Logger.debug(`Day change detected: ${this.currentArchiveDay} -> ${dayString} (no callback configured)`);
       }
     }
     // Update current day tracker
