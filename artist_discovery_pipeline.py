@@ -103,8 +103,8 @@ class ArtistDiscoveryPipeline:
             'total': 0,
             'processed': 0,
             'skipped_existing': 0,
-            'skipped_complete': 0,  # New: Skipped due to quality check pass
-            'skipped_duplicate': 0,  # New: Skipped due to finding case variant
+            'skipped_perplexity': 0,  # Skipped due to already having Perplexity enhancement
+            'skipped_duplicate': 0,  # Skipped due to finding case variant
             'enhanced': 0,
             'created': 0,
             'errors': 0,
@@ -996,8 +996,17 @@ Only include verified information from credible sources."""
         exists, card_path, _ = self.find_existing_card(artist_name)
         return exists, card_path
 
-    def needs_enhancement(self, card_path: Path) -> bool:
-        """Check if existing card needs Perplexity enhancement."""
+    def has_perplexity_enhancement(self, card_path: Path) -> bool:
+        """
+        Check if card has already been enhanced with Perplexity AI.
+
+        This is a strict check - if Perplexity ran once, we never run it again
+        (unless --force flag is used). This prevents expensive duplicate API calls.
+
+        Returns:
+            True if card has 'enhancement_provider: perplexity' in frontmatter
+            False otherwise
+        """
         try:
             with open(card_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -1009,15 +1018,15 @@ Only include verified information from credible sources."""
                     frontmatter_text = content[3:frontmatter_end]
                     frontmatter = yaml.safe_load(frontmatter_text)
 
-                    # Check if already enhanced with Perplexity
+                    # Strict check: has Perplexity marker?
                     if frontmatter and frontmatter.get('enhancement_provider') == 'perplexity':
-                        return False
+                        return True
 
-            return True  # Needs enhancement
+            return False
 
         except Exception as e:
-            self.logger.error(f"Error checking enhancement status: {e}")
-            return True  # Assume needs enhancement on error
+            self.logger.error(f"Error checking Perplexity enhancement status for {card_path}: {e}")
+            return False  # Assume not enhanced on error, will attempt processing
 
     def should_skip_processing(self, card_path: Path) -> Tuple[bool, str]:
         """
@@ -1452,35 +1461,34 @@ Only include verified information from credible sources."""
         """
         Process a single artist through the complete pipeline.
 
+        STRICT DUPLICATE PREVENTION:
+        - If card exists with Perplexity enhancement, ALWAYS skip (unless --force)
+        - No quality checks or partial enhancement logic
+        - "Once enhanced with Perplexity, never again" policy
+
         Returns: Status message string
         """
         try:
             self.logger.info(f"Processing: {artist_name}")
 
-            # Use improved fuzzy matching to find existing card (catches case variants)
+            # STEP 1: Find existing card (fuzzy matching catches case variants like "DR. JOHN" vs "dr_john")
             exists, card_path, match_type = self.find_existing_card(artist_name)
 
             if exists and not self.force:
-                # Log if we found a case variant
+                # Case variant found (e.g., "DR._JOHN.md" when looking for "dr_john")
                 if match_type == "case_variant":
-                    self.logger.info(f"Found duplicate variant for '{artist_name}': {card_path.name}")
+                    self.logger.info(f"Found case variant for '{artist_name}': {card_path.name}")
                     self.stats['skipped_duplicate'] += 1
-                    return f"🔍 Duplicate found: {card_path.name}"
+                    return f"🔍 Duplicate: {card_path.name}"
 
-                # Run comprehensive quality check
-                should_skip, skip_reason = self.should_skip_processing(card_path)
+                # STRICT CHECK: Has Perplexity enhancement? Skip immediately.
+                if self.has_perplexity_enhancement(card_path):
+                    self.logger.info(f"Skipping '{artist_name}': Already enhanced with Perplexity")
+                    self.stats['skipped_perplexity'] += 1
+                    return "✅ Already enhanced with Perplexity"
 
-                if should_skip:
-                    self.logger.info(f"Skipping '{artist_name}': {skip_reason}")
-                    self.stats['skipped_complete'] += 1
-                    return f"✅ {skip_reason}"
-
-                # Card exists but incomplete - check if it needs enhancement
-                if not self.needs_enhancement(card_path):
-                    self.stats['skipped_existing'] += 1
-                    return "🔄 Already enhanced"
-                else:
-                    self.logger.info(f"Card exists but needs Perplexity enhancement: {artist_name} ({skip_reason})")
+                # Card exists but NO Perplexity data - proceed to enhance it
+                self.logger.info(f"Card exists for '{artist_name}' but lacks Perplexity enhancement - processing...")
 
             # STEP 1: Get Spotify metadata
             self.logger.info(f"Fetching Spotify metadata for: {artist_name}")
@@ -1627,8 +1635,7 @@ Only include verified information from credible sources."""
         print(f"\n📊 Processing Summary:")
         print(f"✨ Created: {self.stats['created']} new cards")
         print(f"✅ Enhanced: {self.stats['enhanced']} existing cards")
-        print(f"🔄 Skipped (already complete): {self.stats['skipped_existing']}")
-        print(f"✓  Skipped (quality check passed): {self.stats['skipped_complete']}")
+        print(f"⏭️  Skipped (already has Perplexity): {self.stats['skipped_perplexity']}")
         print(f"🔍 Skipped (duplicate variant found): {self.stats['skipped_duplicate']}")
         print(f"🔗 Connections found: {self.stats['connections_found']}")
         print(f"📚 Network size: {len(self.connections_db)} artists")
@@ -1636,9 +1643,9 @@ Only include verified information from credible sources."""
         print(f"📁 Total processed: {self.stats['processed']}/{self.stats['total']}")
 
         # Calculate efficiency metrics
-        total_skipped = self.stats['skipped_complete'] + self.stats['skipped_duplicate'] + self.stats['skipped_existing']
+        total_skipped = self.stats['skipped_perplexity'] + self.stats['skipped_duplicate']
         if total_skipped > 0:
-            print(f"\n💰 API Cost Savings: Skipped {total_skipped} Perplexity API calls")
+            print(f"\n💰 API Cost Savings: Skipped {total_skipped} expensive Perplexity API calls")
 
         if self.stats['processed'] > 0:
             success_count = self.stats['created'] + self.stats['enhanced']
