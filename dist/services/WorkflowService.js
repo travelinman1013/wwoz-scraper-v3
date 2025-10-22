@@ -211,20 +211,29 @@ export class WorkflowService {
         Logger.info(`Entering continuous mode. Interval=${intervalSec}s`);
         // eslint-disable-next-line no-constant-condition
         while (true) {
+            // Process pending archive from day change (if any) BEFORE the next run
+            // This ensures the previous day's complete archive is processed immediately
+            // after the day change is detected, rather than waiting for the next cycle
+            if (this.pendingArchivePath && this.artistDiscoveryService) {
+                const archivePath = this.pendingArchivePath;
+                this.pendingArchivePath = null;
+                // Verify the archive file exists before processing
+                if (await this.fileExists(archivePath)) {
+                    Logger.info(`[Artist Discovery] Processing pending archive: ${archivePath}`);
+                    // Fire and forget: run artist discovery in background
+                    this.artistDiscoveryService.processArchive(archivePath).catch((err) => {
+                        Logger.error(`Artist discovery failed for ${archivePath}:`, err);
+                    });
+                }
+                else {
+                    Logger.warn(`[Artist Discovery] Pending archive not found: ${archivePath}`);
+                }
+            }
             try {
                 await this.runOnce();
             }
             catch (err) {
                 Logger.error('Run failed; continuing after delay.', err);
-            }
-            // Process pending archive from day change (if any) before waiting
-            if (this.pendingArchivePath && this.artistDiscoveryService) {
-                const archivePath = this.pendingArchivePath;
-                this.pendingArchivePath = null;
-                // Fire and forget: run artist discovery in background
-                this.artistDiscoveryService.processArchive(archivePath).catch((err) => {
-                    Logger.error(`Artist discovery failed for ${archivePath}:`, err);
-                });
             }
             Logger.info(`Waiting ${intervalSec}s before next run...`);
             await this.waitWithCountdown(intervalSec, 100);
@@ -337,7 +346,7 @@ export class WorkflowService {
     // Public API: set pending archive path from day-change callback
     setPendingArchive(archivePath) {
         this.pendingArchivePath = archivePath;
-        Logger.debug(`Pending archive set for artist discovery: ${archivePath}`);
+        Logger.info(`[Artist Discovery] Pending archive queued: ${archivePath}`);
     }
     async createDailySnapshotPlaylistFromArchive(date) {
         const archiverAny = this.archiver;

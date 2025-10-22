@@ -147,9 +147,12 @@ artistDiscovery:
   cardsDir: '/path/to/your/vault/Artists'  # Where artist cards are created
   imagesDir: '/path/to/your/vault/ArtistPortraits'  # Where portraits are saved
 
-  forceReprocess: false  # Set to true to reprocess already-completed archives
+  forceReprocess: false  # IMPORTANT: Keep false to avoid duplicate Perplexity API calls!
+                         # Only set to true when you want to reprocess ALL artists
   timeoutMinutes: 30  # Maximum time for script execution per archive
 ```
+
+> **⚠️ IMPORTANT**: Keep `forceReprocess: false` in production! Setting it to `true` bypasses all duplicate detection and will reprocess every artist with expensive Perplexity API calls, even if they already have complete data.
 
 #### Required Configuration Fields:
 - `enabled`: Master toggle for the feature
@@ -160,7 +163,7 @@ artistDiscovery:
 #### Optional Configuration Fields:
 - `cardsDir`: Override the default artist cards directory
 - `imagesDir`: Override the default artist portraits directory
-- `forceReprocess`: When true, reprocess archives even if already completed successfully
+- `forceReprocess`: **⚠️ Keep `false` in production!** When `true`, bypasses duplicate detection and reprocesses every artist (expensive!)
 - `timeoutMinutes`: Maximum execution time per archive (default: 30 minutes)
 
 ### Automatic Operation
