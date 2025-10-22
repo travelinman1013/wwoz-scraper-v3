@@ -26,7 +26,7 @@ chromePath: null
 # Automatically processes completed daily archives to create/enhance artist cards
 artistDiscovery:
   enabled: false  # Set to true to enable
-  scriptPath: '/Users/maxwell/LETSGO/Projects/image_agent_v5/artist_discovery_pipeline.py'
+  scriptPath: '/path/to/wwoz-scraper-v3/artist_discovery_pipeline.py'
   pythonPath: 'python3'  # or full path to Python executable
   perplexityApiKey: 'YOUR_PERPLEXITY_API_KEY'
   # Optional: Override default paths used by the Python script

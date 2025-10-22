@@ -12,3 +12,15 @@ data/
 # Local config (contains secrets) — keep out of git
 config/*.yaml
 !config/config.example.yaml
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+
+# Python scripts state
+config/processed_archives.json
