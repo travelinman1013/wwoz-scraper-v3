@@ -34,6 +34,13 @@ export interface ArtistDiscoveryConfig {
   timeoutMinutes?: number;
 }
 
+export interface PlaylistArchivingConfig {
+  enabled: boolean;
+  mainPlaylistId: string;
+  durationThresholdHours: number;
+  checkIntervalRuns: number;
+}
+
 export interface RateLimitBucketConfig {
   maxConcurrent: number;
   minTime: number;
@@ -53,6 +60,7 @@ export interface AppConfig {
   rateLimit: RateLimitConfig;
   chromePath: string | null;
   artistDiscovery?: ArtistDiscoveryConfig;
+  playlistArchiving?: PlaylistArchivingConfig;
 }
 
 function resolveConfigPath(): string {
@@ -102,6 +110,19 @@ export function loadConfig(filePath?: string): AppConfig {
     }
     if (!cfg.artistDiscovery.pythonPath || typeof cfg.artistDiscovery.pythonPath !== 'string') {
       throw new Error('Invalid configuration: artistDiscovery.pythonPath is required when enabled.');
+    }
+  }
+
+  // Validate playlist archiving config if enabled
+  if (cfg.playlistArchiving?.enabled) {
+    if (!cfg.playlistArchiving.mainPlaylistId || typeof cfg.playlistArchiving.mainPlaylistId !== 'string') {
+      throw new Error('Invalid configuration: playlistArchiving.mainPlaylistId is required when enabled.');
+    }
+    if (typeof cfg.playlistArchiving.durationThresholdHours !== 'number' || cfg.playlistArchiving.durationThresholdHours <= 0) {
+      throw new Error('Invalid configuration: playlistArchiving.durationThresholdHours must be a positive number.');
+    }
+    if (typeof cfg.playlistArchiving.checkIntervalRuns !== 'number' || cfg.playlistArchiving.checkIntervalRuns <= 0) {
+      throw new Error('Invalid configuration: playlistArchiving.checkIntervalRuns must be a positive number.');
     }
   }
 

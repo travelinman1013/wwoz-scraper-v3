@@ -169,7 +169,7 @@ export class SpotifyEnricher {
             return existing;
         }
         Logger.info(`Creating playlist: ${name}`);
-        const res = await this.schedule(() => this.spotify.createPlaylist(name, { public: false }), 'createPlaylist', 5);
+        const res = await this.schedule(() => this.spotify.createPlaylist(name, { public: true }), 'createPlaylist', 5);
         const pl = res.body;
         return { id: pl.id, name: pl.name };
     }
@@ -253,5 +253,114 @@ export class SpotifyEnricher {
         }
         Logger.info(`Uploading custom cover image to playlist ${playlistId}...`);
         await this.schedule(() => this.spotify.uploadCustomPlaylistCoverImage(playlistId, jpegBase64), 'uploadCustomPlaylistCoverImage');
+    }
+    async getPlaylistDuration(playlistId) {
+        Logger.debug(`Calculating total duration for playlist ${playlistId}...`);
+        let totalMs = 0;
+        let offset = 0;
+        const limit = 100;
+        while (true) {
+            const res = await this.schedule(() => this.spotify.getPlaylistTracks(playlistId, { offset, limit }), 'getPlaylistTracks');
+            const items = res.body.items ?? [];
+            for (const it of items) {
+                const tr = it.track;
+                if (tr?.duration_ms) {
+                    totalMs += tr.duration_ms;
+                }
+            }
+            if (items.length < limit)
+                break;
+            offset += limit;
+        }
+        const hours = totalMs / (1000 * 60 * 60);
+        return hours;
+    }
+    async getPlaylistTracksWithMetadata(playlistId) {
+        Logger.debug(`Fetching all tracks with metadata for playlist ${playlistId}...`);
+        const tracks = [];
+        let offset = 0;
+        const limit = 100;
+        while (true) {
+            const res = await this.schedule(() => this.spotify.getPlaylistTracks(playlistId, { offset, limit }), 'getPlaylistTracks');
+            const items = res.body.items ?? [];
+            for (const it of items) {
+                const tr = it.track;
+                if (tr?.id && tr?.uri) {
+                    tracks.push({
+                        id: tr.id,
+                        uri: tr.uri,
+                        name: tr.name,
+                        addedAt: it.added_at || new Date().toISOString(),
+                        durationMs: tr.duration_ms || 0,
+                    });
+                }
+            }
+            if (items.length < limit)
+                break;
+            offset += limit;
+        }
+        Logger.debug(`Retrieved ${tracks.length} tracks with metadata.`);
+        return tracks;
+    }
+    async copyTracksToPlaylist(fromPlaylistId, toPlaylistId) {
+        if (config.dryRun) {
+            Logger.info(`[dryRun] Would copy tracks from ${fromPlaylistId} to ${toPlaylistId}`);
+            return 0;
+        }
+        Logger.info(`Copying tracks from playlist ${fromPlaylistId} to ${toPlaylistId}...`);
+        // Load cache for destination playlist to avoid duplicates
+        await this.loadPlaylistCache(toPlaylistId);
+        // Fetch all tracks from source playlist
+        const sourceTracks = await this.getPlaylistTracksWithMetadata(fromPlaylistId);
+        let added = 0;
+        const batchSize = 100; // Spotify API allows max 100 tracks per add request
+        const urisToAdd = [];
+        for (const track of sourceTracks) {
+            const isDup = await this.isDuplicate(toPlaylistId, track.id);
+            if (!isDup) {
+                urisToAdd.push(track.uri);
+            }
+        }
+        // Add tracks in batches
+        for (let i = 0; i < urisToAdd.length; i += batchSize) {
+            const batch = urisToAdd.slice(i, i + batchSize);
+            await this.schedule(() => this.spotify.addTracksToPlaylist(toPlaylistId, batch), 'addTracksToPlaylist');
+            added += batch.length;
+            Logger.debug(`Added batch ${Math.floor(i / batchSize) + 1}: ${batch.length} tracks`);
+        }
+        Logger.info(`Copied ${added} tracks to destination playlist.`);
+        return added;
+    }
+    async removeTracksFromPlaylist(playlistId, keepAfterDate) {
+        if (config.dryRun) {
+            Logger.info(`[dryRun] Would remove tracks from ${playlistId} before date ${keepAfterDate}`);
+            return 0;
+        }
+        Logger.info(`Removing old tracks from playlist ${playlistId} (keeping tracks from ${keepAfterDate})...`);
+        // Fetch all tracks with metadata
+        const tracks = await this.getPlaylistTracksWithMetadata(playlistId);
+        // Filter tracks to remove (those added before keepAfterDate)
+        const tracksToRemove = [];
+        for (const track of tracks) {
+            const addedDate = track.addedAt.split('T')[0]; // Extract YYYY-MM-DD
+            if (addedDate < keepAfterDate) {
+                tracksToRemove.push({ uri: track.uri });
+            }
+        }
+        if (tracksToRemove.length === 0) {
+            Logger.info('No old tracks to remove.');
+            return 0;
+        }
+        // Spotify API allows max 100 tracks per remove request
+        const batchSize = 100;
+        let removed = 0;
+        for (let i = 0; i < tracksToRemove.length; i += batchSize) {
+            const batch = tracksToRemove.slice(i, i + batchSize);
+            await this.schedule(() => this.spotify.removeTracksFromPlaylist(playlistId, batch), 'removeTracksFromPlaylist');
+            removed += batch.length;
+            Logger.debug(`Removed batch ${Math.floor(i / batchSize) + 1}: ${batch.length} tracks`);
+        }
+        Logger.info(`Removed ${removed} old tracks from playlist.`);
+        return removed;
     }
 }

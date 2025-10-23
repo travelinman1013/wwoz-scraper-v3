@@ -7,6 +7,7 @@ import { config } from '../utils/config.js';
 import { ShowGuesser } from '../utils/showGuesser.js';
 import { resolveSongDayString, buildWwozDisplayTitle } from '../utils/date.js';
 import { ArtistDiscoveryService } from './ArtistDiscoveryService.js';
+import { PlaylistArchiver } from './PlaylistArchiver.js';
 import type { IArchiver, IEnricher, IScraper, ScrapedSong, TrackMatch, ArchiveEntry } from '../types/index.js';
 
 export class WorkflowService {
@@ -15,9 +16,11 @@ export class WorkflowService {
   private archiver: IArchiver;
   private showGuesser: ShowGuesser;
   private artistDiscoveryService: ArtistDiscoveryService | null = null;
+  private playlistArchiver: PlaylistArchiver | null = null;
   private pendingArchivePath: string | null = null;
   private immediateRunRequested = false;
   private immediateEmitter = new EventEmitter();
+  private runCounter = 0;
 
   constructor(scraper: IScraper, enricher: IEnricher, archiver: IArchiver) {
     this.scraper = scraper;
@@ -29,6 +32,13 @@ export class WorkflowService {
     if (config.artistDiscovery?.enabled) {
       this.artistDiscoveryService = new ArtistDiscoveryService();
       Logger.info('Artist Discovery Service initialized.');
+    }
+
+    // Initialize playlist archiver if enabled
+    if (config.playlistArchiving?.enabled) {
+      // Type assertion needed because enricher is IEnricher interface
+      this.playlistArchiver = new PlaylistArchiver(enricher as any);
+      Logger.info('Playlist Archiver initialized.');
     }
   }
 
@@ -221,6 +231,23 @@ export class WorkflowService {
       await this.createDailySnapshotPlaylistFromArchive(dayjs().subtract(1, 'day').format('YYYY-MM-DD'));
     } catch (err) {
       Logger.error('Failed to create daily snapshot Spotify playlist (non-fatal).', err as Error);
+    }
+
+    // Check if playlist archiving should occur (periodic check)
+    this.runCounter++;
+    if (this.playlistArchiver && config.playlistArchiving?.enabled) {
+      const { checkIntervalRuns } = config.playlistArchiving;
+      if (this.runCounter % checkIntervalRuns === 0) {
+        try {
+          const shouldArchive = await this.playlistArchiver.shouldArchive();
+          if (shouldArchive) {
+            Logger.info('Playlist duration threshold reached. Starting archiving process...');
+            await this.playlistArchiver.archivePlaylist();
+          }
+        } catch (err) {
+          Logger.error('Failed to check or execute playlist archiving (non-fatal).', err as Error);
+        }
+      }
     }
   }
 
@@ -485,5 +512,16 @@ export class WorkflowService {
     } catch {
       return false;
     }
+  }
+
+  // Public API: manually trigger playlist archiving
+  public async triggerPlaylistArchiving(): Promise<void> {
+    if (!this.playlistArchiver || !config.playlistArchiving?.enabled) {
+      Logger.warn('Playlist archiving is not enabled.');
+      return;
+    }
+
+    Logger.info('Manual playlist archiving triggered...');
+    await this.playlistArchiver.archivePlaylist();
   }
 }

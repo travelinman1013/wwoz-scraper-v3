@@ -35,6 +35,14 @@ artistDiscovery:
   forceReprocess: false  # Set to true to reprocess already-completed archives
   timeoutMinutes: 30  # Maximum time for script execution
 
+# Playlist Archiving
+# Automatically archives the main playlist when it reaches a duration threshold
+playlistArchiving:
+  enabled: false  # Set to true to enable
+  mainPlaylistId: '3hMHYtjltORPaT2RPvPZZO'  # Your main WWOZTracker playlist ID
+  durationThresholdHours: 65  # Archive when playlist reaches this many hours
+  checkIntervalRuns: 5  # Check playlist duration every N workflow runs
+
 # NOTE:
 # - Copy this file to a safe location and customize values.
 # - Set CONFIG_PATH to point to your private YAML:

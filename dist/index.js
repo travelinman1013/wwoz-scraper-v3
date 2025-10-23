@@ -12,6 +12,7 @@ program
     .option('--snapshot <date>', 'Create a daily snapshot playlist for YYYY-MM-DD and exit')
     .option('--backfill <days>', 'Create daily snapshot playlists for the past <days> days and exit', (v) => parseInt(v, 10))
     .option('--backfill-artists <days>', 'Run artist discovery pipeline for the past <days> days and exit', (v) => parseInt(v, 10))
+    .option('--archive-playlist', 'Archive the main playlist to a dated archive playlist and clear old tracks')
     // cover/image-selection functionality removed
     .action(async (options) => {
     const scraper = new WWOZScraper();
@@ -63,6 +64,11 @@ program
         const days = Math.max(1, options.backfillArtists);
         Logger.info(`Backfilling artist discovery for past ${days} day(s)...`);
         await workflow.backfillArtistDiscovery(days);
+        return;
+    }
+    if (options.archivePlaylist) {
+        Logger.info('Manually triggering playlist archiving...');
+        await workflow.triggerPlaylistArchiving();
         return;
     }
     // image cover update and indexing commands removed

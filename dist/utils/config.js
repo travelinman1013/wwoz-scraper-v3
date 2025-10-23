@@ -47,6 +47,18 @@ export function loadConfig(filePath) {
             throw new Error('Invalid configuration: artistDiscovery.pythonPath is required when enabled.');
         }
     }
+    // Validate playlist archiving config if enabled
+    if (cfg.playlistArchiving?.enabled) {
+        if (!cfg.playlistArchiving.mainPlaylistId || typeof cfg.playlistArchiving.mainPlaylistId !== 'string') {
+            throw new Error('Invalid configuration: playlistArchiving.mainPlaylistId is required when enabled.');
+        }
+        if (typeof cfg.playlistArchiving.durationThresholdHours !== 'number' || cfg.playlistArchiving.durationThresholdHours <= 0) {
+            throw new Error('Invalid configuration: playlistArchiving.durationThresholdHours must be a positive number.');
+        }
+        if (typeof cfg.playlistArchiving.checkIntervalRuns !== 'number' || cfg.playlistArchiving.checkIntervalRuns <= 0) {
+            throw new Error('Invalid configuration: playlistArchiving.checkIntervalRuns must be a positive number.');
+        }
+    }
     // Environment overrides (non-secret convenience)
     const envStaticPlaylist = process.env.SPOTIFY_STATIC_PLAYLIST_ID;
     if (envStaticPlaylist && envStaticPlaylist.trim().length > 0) {
