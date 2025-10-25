@@ -549,7 +549,7 @@ class ArtistDiscoveryPipeline:
             # Also check recording relations for instruments
             for rel in artist_data.get('recording-relation-list', []):
                 for attr in rel.get('attribute-list', []):
-                    if attr not in instruments and 'vocal' in attr.lower() or 'guitar' in attr.lower() or 'piano' in attr.lower():
+                    if attr not in instruments and ('vocal' in attr.lower() or 'guitar' in attr.lower() or 'piano' in attr.lower()):
                         instruments.append(attr)
 
             if instruments:
