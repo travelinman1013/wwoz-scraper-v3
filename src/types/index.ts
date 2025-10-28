@@ -66,6 +66,10 @@ export interface IArchiver {
   clearDedupCache?(): void;
   // Optional: read a day's archive and return Spotify track URIs in chronological order
   getDailySpotifyTrackUris?(date: string): Promise<string[]>;
+  // Optional: get pending archive path if delay period has elapsed (for delayed processing)
+  getPendingArchiveIfReady?(): string | null;
+  // Optional: clear pending archive after processing
+  clearPendingArchive?(): void;
 }
 
 // Artist Discovery Pipeline state tracking

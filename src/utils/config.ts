@@ -32,6 +32,7 @@ export interface ArtistDiscoveryConfig {
   imagesDir?: string;
   forceReprocess: boolean;
   timeoutMinutes?: number;
+  dayChangeDelayHours?: number;
 }
 
 export interface PlaylistArchivingConfig {

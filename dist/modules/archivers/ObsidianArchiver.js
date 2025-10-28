@@ -9,11 +9,35 @@ export class ObsidianArchiver {
     recentKeys = new Map(); // key -> lastWrittenEpochMs
     currentArchiveDay = null; // YYYY-MM-DD format
     onDayChange;
+    pendingArchive = null;
     constructor(onDayChange) {
         this.onDayChange = onDayChange;
     }
     clearDedupCache() {
         this.recentKeys.clear();
+    }
+    /**
+     * Get pending archive path if the delay period has elapsed.
+     * Returns null if no pending archive or delay not yet met.
+     */
+    getPendingArchiveIfReady() {
+        if (!this.pendingArchive)
+            return null;
+        const delayHours = config.artistDiscovery?.dayChangeDelayHours ?? 0;
+        if (delayHours <= 0)
+            return null;
+        const delayMs = delayHours * 60 * 60 * 1000;
+        const elapsedMs = Date.now() - this.pendingArchive.detectedAt;
+        if (elapsedMs >= delayMs) {
+            return this.pendingArchive.path;
+        }
+        return null;
+    }
+    /**
+     * Clear the pending archive after it has been processed.
+     */
+    clearPendingArchive() {
+        this.pendingArchive = null;
     }
     async archive(entry) {
         const basePath = config.archive.basePath;
@@ -25,16 +49,29 @@ export class ObsidianArchiver {
         const fileDate = this.resolveDate(entry);
         const root = this.computeBaseRoot(basePath);
         const { dir, filePath } = await this.getDailyFilePath(root, fileDate);
-        // Detect day change and trigger callback if configured
+        // Detect day change and store pending archive with timestamp
         const dayString = fileDate.format('YYYY-MM-DD');
         if (this.currentArchiveDay !== null && this.currentArchiveDay !== dayString) {
             // Day has changed; calculate previous day's archive path
             const previousDay = dayjs(this.currentArchiveDay);
-            if (previousDay.isValid() && this.onDayChange) {
+            if (previousDay.isValid()) {
                 const { filePath: previousFilePath } = await this.getDailyFilePath(root, previousDay);
                 Logger.info(`[Day Change] Detected: ${this.currentArchiveDay} -> ${dayString}`);
-                Logger.info(`[Day Change] Queueing previous day archive for processing: ${previousFilePath}`);
-                this.onDayChange(previousFilePath);
+                const delayHours = config.artistDiscovery?.dayChangeDelayHours ?? 0;
+                if (delayHours > 0) {
+                    // Store pending archive with timestamp for delayed processing
+                    this.pendingArchive = { path: previousFilePath, detectedAt: Date.now() };
+                    const delayMs = delayHours * 60 * 60 * 1000;
+                    const readyAt = new Date(this.pendingArchive.detectedAt + delayMs);
+                    Logger.info(`[Day Change] Archive queued for delayed processing (delay: ${delayHours}h, ready at: ${readyAt.toISOString()}): ${previousFilePath}`);
+                }
+                else {
+                    // Immediate processing (legacy behavior)
+                    Logger.info(`[Day Change] Queueing previous day archive for immediate processing: ${previousFilePath}`);
+                    if (this.onDayChange) {
+                        this.onDayChange(previousFilePath);
+                    }
+                }
             }
             else {
                 Logger.debug(`Day change detected: ${this.currentArchiveDay} -> ${dayString} (no callback configured)`);

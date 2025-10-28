@@ -256,22 +256,41 @@ export class WorkflowService {
     Logger.info(`Entering continuous mode. Interval=${intervalSec}s`);
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      // Process pending archive from day change (if any) BEFORE the next run
-      // This ensures the previous day's complete archive is processed immediately
-      // after the day change is detected, rather than waiting for the next cycle
+      // Check for delayed pending archive from ObsidianArchiver (new behavior)
+      if (typeof this.archiver.getPendingArchiveIfReady === 'function' && this.artistDiscoveryService) {
+        const archivePath = this.archiver.getPendingArchiveIfReady!();
+        if (archivePath) {
+          // Delay has elapsed, ready to process
+          if (typeof this.archiver.clearPendingArchive === 'function') {
+            this.archiver.clearPendingArchive!();
+          }
+
+          if (await this.fileExists(archivePath)) {
+            Logger.info(`[Artist Discovery] Processing delayed pending archive: ${archivePath}`);
+            // Fire and forget: run artist discovery in background
+            this.artistDiscoveryService.processArchive(archivePath).catch((err) => {
+              Logger.error(`Artist discovery failed for ${archivePath}:`, err as Error);
+            });
+          } else {
+            Logger.warn(`[Artist Discovery] Delayed pending archive not found: ${archivePath}`);
+          }
+        }
+      }
+
+      // Process immediate pending archive from day change (legacy behavior for dayChangeDelayHours=0)
       if (this.pendingArchivePath && this.artistDiscoveryService) {
         const archivePath = this.pendingArchivePath;
         this.pendingArchivePath = null;
 
         // Verify the archive file exists before processing
         if (await this.fileExists(archivePath)) {
-          Logger.info(`[Artist Discovery] Processing pending archive: ${archivePath}`);
+          Logger.info(`[Artist Discovery] Processing immediate pending archive: ${archivePath}`);
           // Fire and forget: run artist discovery in background
           this.artistDiscoveryService.processArchive(archivePath).catch((err) => {
             Logger.error(`Artist discovery failed for ${archivePath}:`, err as Error);
           });
         } else {
-          Logger.warn(`[Artist Discovery] Pending archive not found: ${archivePath}`);
+          Logger.warn(`[Artist Discovery] Immediate pending archive not found: ${archivePath}`);
         }
       }
 
