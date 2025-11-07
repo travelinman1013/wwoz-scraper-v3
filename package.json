@@ -5,9 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "nodemon --watch src --exec 'ts-node-esm src/index.ts'",
+    "dev": "tsc --watch & nodemon --watch dist --delay 3 dist/index.js",
     "build": "tsc",
-    
     "refresh:processed": "npm run build && node dist/scripts/refresh_processed.js"
   },
   "dependencies": {
@@ -28,6 +27,7 @@
     "@types/spotify-web-api-node": "^5.0.11",
     "nodemon": "^3.1.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.4.3"
   }
 }

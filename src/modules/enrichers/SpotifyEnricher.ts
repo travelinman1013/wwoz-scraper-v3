@@ -248,13 +248,14 @@ export class SpotifyEnricher implements IEnricher {
     return set.has(trackId);
   }
 
-  async addToPlaylist(playlistId: string, trackUri: string): Promise<void> {
+  async addToPlaylist(playlistId: string, trackUri: string, position?: number): Promise<void> {
     if (config.dryRun) {
-      Logger.info(`[dryRun] Would add to playlist ${playlistId}: ${trackUri}`);
+      Logger.info(`[dryRun] Would add to playlist ${playlistId}: ${trackUri}${position !== undefined ? ` at position ${position}` : ''}`);
       return;
     }
-    Logger.info(`Adding track to playlist ${playlistId}: ${trackUri}`);
-    await this.schedule(() => this.spotify.addTracksToPlaylist(playlistId, [trackUri]), 'addTracksToPlaylist');
+    Logger.info(`Adding track to playlist ${playlistId}: ${trackUri}${position !== undefined ? ` at position ${position}` : ''}`);
+    const options = position !== undefined ? { position } : undefined;
+    await this.schedule(() => this.spotify.addTracksToPlaylist(playlistId, [trackUri], options), 'addTracksToPlaylist');
     // Update cache optimistically
     const id = trackUri.replace('spotify:track:', '');
     if (!this.playlistCache.has(playlistId)) {

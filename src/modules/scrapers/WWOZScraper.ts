@@ -84,10 +84,12 @@ export class WWOZScraper implements IScraper {
 
       Logger.info('Extracting rows from playlist table...');
 
-      let rawRows = await page.$$eval(activeSelector, (rows) => {
+      let rawRows = await page.$$eval(activeSelector, function(rows) {
         // Map rows to structured data using explicit data-bind attributes when present.
-        return rows.map((row) => {
-          const get = (sel: string) => (row.querySelector<HTMLTableCellElement>(sel)?.textContent || '').trim();
+        return rows.map(function(row) {
+          function get(sel: string) {
+            return (row.querySelector(sel)?.textContent || '').trim();
+          }
           let artist = get('td[data-bind="artist"]');
           let title = get('td[data-bind="title"]');
           let album = get('td[data-bind="album"]');
@@ -96,8 +98,8 @@ export class WWOZScraper implements IScraper {
 
           if (!artist && !title) {
             // Fallback heuristics when explicit bindings are missing.
-            const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
-            const texts = cells.map((c) => (c.textContent || '').trim());
+            const cells = Array.from(row.querySelectorAll('td'));
+            const texts = cells.map(function(c) { return (c.textContent || '').trim(); });
             const timeRe = /^\d{1,2}:\d{2}(?:\s*[AaPp]\.?[Mm]\.?)?$/; // matches 3:05 PM, 3:05pm, 15:05
 
             // Common table layout: [Time, Artist, Title, Album]
@@ -108,9 +110,9 @@ export class WWOZScraper implements IScraper {
               album = texts[3] || '';
             } else {
               // Generic mapping with time detection anywhere in the row
-              const timeIdx = texts.findIndex((t) => timeRe.test(t));
+              const timeIdx = texts.findIndex(function(t) { return timeRe.test(t); });
               if (timeIdx >= 0) time = texts[timeIdx];
-              const nonTime = texts.filter((_, i) => i !== timeIdx).filter((t) => t && t !== '-');
+              const nonTime = texts.filter(function(_, i) { return i !== timeIdx; }).filter(function(t) { return t && t !== '-'; });
               if (nonTime.length >= 3) {
                 // Assume [Artist, Title, Album]
                 artist = nonTime[0];
@@ -123,7 +125,7 @@ export class WWOZScraper implements IScraper {
               }
               // Try to capture date if last cell looks like a date (MM/DD or MM/DD/YYYY)
               const dateRe = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/;
-              const dateIdx = texts.findIndex((t) => dateRe.test(t));
+              const dateIdx = texts.findIndex(function(t) { return dateRe.test(t); });
               if (dateIdx >= 0) date = texts[dateIdx];
             }
           }

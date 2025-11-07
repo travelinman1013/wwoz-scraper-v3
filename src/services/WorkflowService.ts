@@ -112,7 +112,9 @@ export class WorkflowService {
           song.host = programInfo.host;
         }
 
-        // Early duplicate detection against archive
+        // Archive duplicate detection (for stats tracking only)
+        // Note: We don't skip processing here to allow re-adding songs that were manually
+        // deleted from Spotify playlist. The Spotify duplicate check below will handle skipping.
         if (typeof this.archiver.wasArchived === 'function') {
           const alreadyArchived = await this.archiver.wasArchived!({
             song,
@@ -125,9 +127,7 @@ export class WorkflowService {
             if (archiveDuplicatesInARow > archiveDuplicatesMaxStreak) {
               archiveDuplicatesMaxStreak = archiveDuplicatesInARow;
             }
-            // Do not log each archive duplicate to keep logs concise; summarized at end of run.
-            // Do not process further for archive duplicates
-            continue;
+            // Don't skip - let the Spotify playlist check determine if we need to add this song
           }
         }
 
@@ -182,10 +182,17 @@ export class WorkflowService {
         if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(playlistId);
         await this.enricher.loadPlaylistCache(playlistId);
         pendingAdds.sort((a, b) => a.timeKey - b.timeKey);
+
+        // Get current playlist size to append tracks at the end (maintaining chronological order)
+        let position = typeof this.enricher.getCachedTrackCount === 'function'
+          ? this.enricher.getCachedTrackCount(playlistId)
+          : 0;
+
         for (const item of pendingAdds) {
           const dup = await this.enricher.isDuplicate(playlistId, item.id);
           if (dup) continue;
-          await this.enricher.addToPlaylist(playlistId, item.uri);
+          await this.enricher.addToPlaylist(playlistId, item.uri, position);
+          position++; // Increment position for next track
           added++;
         }
       }
@@ -427,12 +434,26 @@ export class WorkflowService {
     const pl = await this.enricher.getOrCreatePlaylist(playlistName);
     if (this.enricher.clearPlaylistCache) this.enricher.clearPlaylistCache(pl.id);
     await this.enricher.loadPlaylistCache(pl.id);
+
+    // Check if playlist is already fully populated to avoid duplicate creation
+    const currentTrackCount = typeof this.enricher.getCachedTrackCount === 'function'
+      ? this.enricher.getCachedTrackCount(pl.id)
+      : 0;
+
+    if (currentTrackCount >= uris.length) {
+      Logger.info(`Daily snapshot playlist already populated: ${playlistName}. Skipping (${currentTrackCount} tracks).`);
+      return;
+    }
+
+    // Get current position to append tracks at the end (maintaining chronological order)
+    let position = currentTrackCount;
     let added = 0;
     for (const uri of uris) {
       const id = uri.replace('spotify:track:', '');
       const dup = await this.enricher.isDuplicate(pl.id, id);
       if (dup) continue;
-      await this.enricher.addToPlaylist(pl.id, uri);
+      await this.enricher.addToPlaylist(pl.id, uri, position);
+      position++; // Increment position for next track
       added++;
     }
     Logger.info(`Daily snapshot playlist ensured: ${playlistName}. Tracks added=${added}.`);
