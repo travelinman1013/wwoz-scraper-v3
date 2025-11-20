@@ -7,7 +7,8 @@ import { config } from '../../utils/config.js';
 import { resolveSongDay, buildWwozDisplayTitle } from '../../utils/date.js';
 export class ObsidianArchiver {
     recentKeys = new Map(); // key -> lastWrittenEpochMs
-    currentArchiveDay = null; // YYYY-MM-DD format
+    currentArchiveDay = null; // YYYY-MM-DD format (tracks song day for archiving)
+    lastScraperRunDay = null; // YYYY-MM-DD format (tracks real calendar day)
     onDayChange;
     pendingArchive = null;
     constructor(onDayChange) {
@@ -49,35 +50,41 @@ export class ObsidianArchiver {
         const fileDate = this.resolveDate(entry);
         const root = this.computeBaseRoot(basePath);
         const { dir, filePath } = await this.getDailyFilePath(root, fileDate);
-        // Detect day change and store pending archive with timestamp
-        const dayString = fileDate.format('YYYY-MM-DD');
-        if (this.currentArchiveDay !== null && this.currentArchiveDay !== dayString) {
-            // Day has changed; calculate previous day's archive path
-            const previousDay = dayjs(this.currentArchiveDay);
+        // Detect real calendar day change (not song day change)
+        const currentRealDay = dayjs().format('YYYY-MM-DD');
+        if (this.lastScraperRunDay !== null && this.lastScraperRunDay !== currentRealDay) {
+            // Real calendar day has changed; calculate previous day's archive path
+            const previousDay = dayjs(this.lastScraperRunDay);
             if (previousDay.isValid()) {
                 const { filePath: previousFilePath } = await this.getDailyFilePath(root, previousDay);
-                Logger.info(`[Day Change] Detected: ${this.currentArchiveDay} -> ${dayString}`);
-                const delayHours = config.artistDiscovery?.dayChangeDelayHours ?? 0;
-                if (delayHours > 0) {
-                    // Store pending archive with timestamp for delayed processing
-                    this.pendingArchive = { path: previousFilePath, detectedAt: Date.now() };
-                    const delayMs = delayHours * 60 * 60 * 1000;
-                    const readyAt = new Date(this.pendingArchive.detectedAt + delayMs);
-                    Logger.info(`[Day Change] Archive queued for delayed processing (delay: ${delayHours}h, ready at: ${readyAt.toISOString()}): ${previousFilePath}`);
-                }
-                else {
-                    // Immediate processing (legacy behavior)
-                    Logger.info(`[Day Change] Queueing previous day archive for immediate processing: ${previousFilePath}`);
-                    if (this.onDayChange) {
-                        this.onDayChange(previousFilePath);
+                // Only queue if we haven't already queued this same archive
+                if (!this.pendingArchive || this.pendingArchive.path !== previousFilePath) {
+                    Logger.info(`[Day Change] Detected: ${this.lastScraperRunDay} -> ${currentRealDay}`);
+                    const delayHours = config.artistDiscovery?.dayChangeDelayHours ?? 0;
+                    if (delayHours > 0) {
+                        // Store pending archive with timestamp for delayed processing
+                        this.pendingArchive = { path: previousFilePath, detectedAt: Date.now() };
+                        const delayMs = delayHours * 60 * 60 * 1000;
+                        const readyAt = dayjs(this.pendingArchive.detectedAt + delayMs);
+                        Logger.info(`[Day Change] Archive queued for delayed processing (delay: ${delayHours}h, ready at: ${readyAt.format('YYYY-MM-DD HH:mm:ss')}): ${previousFilePath}`);
+                    }
+                    else {
+                        // Immediate processing (legacy behavior)
+                        Logger.info(`[Day Change] Queueing previous day archive for immediate processing: ${previousFilePath}`);
+                        if (this.onDayChange) {
+                            this.onDayChange(previousFilePath);
+                        }
                     }
                 }
             }
-            else {
-                Logger.debug(`Day change detected: ${this.currentArchiveDay} -> ${dayString} (no callback configured)`);
-            }
         }
-        // Update current day tracker
+        // Update real calendar day tracker
+        if (this.lastScraperRunDay === null) {
+            Logger.debug(`Scraper run day initialized: ${currentRealDay}`);
+        }
+        this.lastScraperRunDay = currentRealDay;
+        // Track song day for archiving purposes (but don't use for day change detection)
+        const dayString = fileDate.format('YYYY-MM-DD');
         if (this.currentArchiveDay === null) {
             Logger.debug(`Archive day initialized: ${dayString}`);
         }
