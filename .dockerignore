@@ -1,0 +1,57 @@
+# Dependencies - will be installed in container
+node_modules/
+
+# Build output - will be built in container
+dist/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+
+# Local config with secrets
+config/*.yaml
+!config/config.example.yaml
+config/processed_archives.json
+
+# Python virtual environment and cache
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Playwright test artifacts
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Data folder
+data/
+
+# Environment files
+.env
+.env.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (not needed in image)
+*.md
+!templates/*.md.ejs
+
+# Test files
+test_*.js
+FIXES_VALIDATED.md
+VALIDATION_TEST.md
+
+# macOS
+.DS_Store
+**/.DS_Store

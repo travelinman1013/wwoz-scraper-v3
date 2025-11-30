@@ -1,0 +1,27 @@
+services:
+  wwoz-scraper:
+    build: .
+    container_name: wwoz-scraper
+    restart: unless-stopped
+
+    environment:
+      - CONFIG_PATH=/app/config/config.yaml
+
+    volumes:
+      # Configuration file with secrets (read-only)
+      - ./config/config.docker.yaml:/app/config/config.yaml:ro
+
+      # Obsidian vault - wwoztracker directory
+      # Update archive.basePath in config.yaml to use /vault prefix when running in Docker
+      - /Users/maxwell/LETSGO/MaxVault/01_Projects/wwoztracker:/vault
+
+      # State persistence (processed_archives.json, etc.)
+      - wwoz-state:/app/config/state
+
+    # Enable interactive mode support
+    stdin_open: true
+    tty: true
+
+volumes:
+  wwoz-state:
+    name: wwoz-scraper-state
