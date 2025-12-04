@@ -23,11 +23,17 @@ RUN npm run build
 # ==============================================================================
 FROM mcr.microsoft.com/playwright:v1.55.0-jammy AS production
 
-# Install Python 3 and pip for artist discovery pipeline
+# Install Python 3, pip, and timezone data for artist discovery pipeline
+# Set timezone non-interactively before installing tzdata
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Chicago
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 

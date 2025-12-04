@@ -45,6 +45,21 @@ export class WorkflowService {
         }
         // Process newest-first to hit fresh items and stop early on dups in continuous mode
         const songsOrdered = songs.slice().sort((a, b) => this.sortKeyForSong(b) - this.sortKeyForSong(a));
+        // Deduplicate scraped songs by artist+title (keeps first occurrence = newest after sort)
+        // This handles cases where the same song appears multiple times in the scraped data
+        const seenSongKeys = new Set();
+        const songsDeduped = songsOrdered.filter((song) => {
+            const key = `${(song.artist || '').toLowerCase().trim()}::${(song.title || '').toLowerCase().trim()}`;
+            if (seenSongKeys.has(key)) {
+                Logger.debug(`Skipping duplicate scraped song: ${song.artist} - ${song.title}`);
+                return false;
+            }
+            seenSongKeys.add(key);
+            return true;
+        });
+        if (songsDeduped.length < songsOrdered.length) {
+            Logger.info(`Deduplicated scraped songs: ${songsOrdered.length} -> ${songsDeduped.length}`);
+        }
         // Resolve target playlist
         let playlistId;
         let playlistName;
@@ -81,7 +96,7 @@ export class WorkflowService {
         let archiveDuplicatesTotal = 0;
         let archiveDuplicatesMaxStreak = 0;
         // We still track archive duplicate stats but no longer stop early.
-        for (const song of songsOrdered) {
+        for (const song of songsDeduped) {
             processed++;
             const archivedAt = new Date().toISOString();
             try {

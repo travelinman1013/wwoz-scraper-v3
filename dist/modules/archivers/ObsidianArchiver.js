@@ -11,8 +11,52 @@ export class ObsidianArchiver {
     lastScraperRunDay = null; // YYYY-MM-DD format (tracks real calendar day)
     onDayChange;
     pendingArchive = null;
+    stateFilePath;
     constructor(onDayChange) {
         this.onDayChange = onDayChange;
+        this.stateFilePath = path.resolve(process.cwd(), 'config', 'state', 'archiver_state.json');
+        this.loadState();
+    }
+    /**
+     * Load persisted state from disk.
+     * This allows day change detection to survive container restarts.
+     */
+    loadState() {
+        try {
+            if (fs.existsSync(this.stateFilePath)) {
+                const data = fs.readFileSync(this.stateFilePath, 'utf8');
+                const state = JSON.parse(data);
+                this.lastScraperRunDay = state.lastScraperRunDay ?? null;
+                this.pendingArchive = state.pendingArchive ?? null;
+                Logger.info(`[Archiver] Loaded persisted state: lastScraperRunDay=${this.lastScraperRunDay}, pendingArchive=${this.pendingArchive?.path ?? 'none'}`);
+            }
+            else {
+                Logger.debug('[Archiver] No persisted state file found; starting fresh.');
+            }
+        }
+        catch (err) {
+            Logger.warn(`[Archiver] Failed to load persisted state (will start fresh): ${err}`);
+        }
+    }
+    /**
+     * Save current state to disk for persistence across restarts.
+     */
+    saveState() {
+        try {
+            const dir = path.dirname(this.stateFilePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            const state = {
+                lastScraperRunDay: this.lastScraperRunDay,
+                pendingArchive: this.pendingArchive,
+            };
+            fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2), 'utf8');
+            Logger.debug(`[Archiver] Saved state: lastScraperRunDay=${this.lastScraperRunDay}`);
+        }
+        catch (err) {
+            Logger.error(`[Archiver] Failed to save state: ${err}`);
+        }
     }
     clearDedupCache() {
         this.recentKeys.clear();
@@ -39,6 +83,7 @@ export class ObsidianArchiver {
      */
     clearPendingArchive() {
         this.pendingArchive = null;
+        this.saveState();
     }
     async archive(entry) {
         const basePath = config.archive.basePath;
@@ -67,6 +112,7 @@ export class ObsidianArchiver {
                         const delayMs = delayHours * 60 * 60 * 1000;
                         const readyAt = dayjs(this.pendingArchive.detectedAt + delayMs);
                         Logger.info(`[Day Change] Archive queued for delayed processing (delay: ${delayHours}h, ready at: ${readyAt.format('YYYY-MM-DD HH:mm:ss')}): ${previousFilePath}`);
+                        this.saveState(); // Persist pending archive
                     }
                     else {
                         // Immediate processing (legacy behavior)
@@ -79,10 +125,14 @@ export class ObsidianArchiver {
             }
         }
         // Update real calendar day tracker
+        const dayChanged = this.lastScraperRunDay !== currentRealDay;
         if (this.lastScraperRunDay === null) {
             Logger.debug(`Scraper run day initialized: ${currentRealDay}`);
         }
         this.lastScraperRunDay = currentRealDay;
+        if (dayChanged) {
+            this.saveState(); // Persist day change
+        }
         // Track song day for archiving purposes (but don't use for day change detection)
         const dayString = fileDate.format('YYYY-MM-DD');
         if (this.currentArchiveDay === null) {
